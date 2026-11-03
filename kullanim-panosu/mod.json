@@ -1,0 +1,11 @@
+{
+  "place": "none",
+  "title": "Kullanım",
+  "overlay": {
+    "kind": "window",
+    "key": "kullanim-panosu",
+    "keep": true,
+    "width": 420,
+    "height": 420
+  }
+}

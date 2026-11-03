@@ -1,0 +1,5 @@
+{
+  "global": {
+    "ctrl-shift-j": "mod.open:kullanim-panosu"
+  }
+}
