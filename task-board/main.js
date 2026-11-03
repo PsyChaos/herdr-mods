@@ -1,10 +1,10 @@
-// Görev panosu: which agent leads, which tasks it handed out, and which
+// Task board: which agent leads, which tasks it handed out, and which
 // provider works on each one right now.
 //
 // A task is any terminal started with a `task` label, usually by a lead agent:
 //   hc run --bg --name <slug> --label task="<title>" --label role=<role> <agent> "<task>"
 // Tasks are grouped under the terminal that started them (their parent).
-// Runs as a window (ctrl-shift-g, "mod.open:gorev-panosu") or docked in a
+// Runs as a window (ctrl-shift-g, "mod.open:task-board") or docked in a
 // personal layout as block `tasks` (see dock.js).
 
 import { View, div, image, svg } from "gpui-kit";
@@ -15,19 +15,19 @@ import { dockSide, moveDock, hideDock } from "./dock.js";
 // Durations change by the minute; nothing else here needs a timer.
 const CLOCK_MS = 30000;
 // Finished tasks leave terminals(); the board keeps their last facts here.
-const HISTORY_KEY = "gorev-panosu.finished";
+const HISTORY_KEY = "task-board.finished";
 const HISTORY_MAX = 50;
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const WORDS = {
-  working: "çalışıyor",
-  blocked: "seni bekliyor",
-  error: "hata",
-  idle: "boşta",
-  done: "bitti",
-  running: "çalışıyor",
-  finished: "tamamlandı",
-  failed: "başarısız",
-  stopped: "durduruldu",
+  working: "working",
+  blocked: "needs you",
+  error: "error",
+  idle: "idle",
+  done: "done",
+  running: "working",
+  finished: "done",
+  failed: "failed",
+  stopped: "stopped",
 };
 // Most urgent first.
 const ORDER = { blocked: 0, error: 0, failed: 1, working: 2, running: 2, done: 3, idle: 4, stopped: 5, finished: 5 };
@@ -50,9 +50,9 @@ function icon(program, size, color) {
 
 function duration(ms) {
   const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) return "<1dk";
-  if (minutes < 60) return `${minutes}dk`;
-  return `${Math.floor(minutes / 60)}sa ${minutes % 60}dk`;
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 function statusOf(task, reported) {
@@ -99,7 +99,7 @@ function groups(tasks, everyone, reported) {
   return list.sort((a, b) => rank(a.tasks[0].status) - rank(b.tasks[0].status));
 }
 
-export default class GorevPanosu extends View {
+export default class TaskBoard extends View {
   init(_props, cx) {
     this.seen = new Map();
     this.resolving = new Set();
@@ -167,11 +167,11 @@ export default class GorevPanosu extends View {
       .text_size(12)
       .border_b(1)
       .border_color(t.border)
-      .child(div().flex_none().font_semibold().text_color(t.foreground).child("Görevler"))
+      .child(div().flex_none().font_semibold().text_color(t.foreground).child("Tasks"))
       // The counts give way first when the panel is narrow; buttons never do.
-      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim).child(`${live} aktif · ${finished.length} biten`))
+      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim).child(`${live} active · ${finished.length} done`))
       .when(finished.length > 0, (el) =>
-        el.child(this.button(t, "clear", "Temizle", (_e, cx) => this.clearFinished(finished, cx))),
+        el.child(this.button(t, "clear", "Clear", (_e, cx) => this.clearFinished(finished, cx))),
       )
       .children(this.windowButtons(t));
   }
@@ -183,14 +183,14 @@ export default class GorevPanosu extends View {
     const side = dockSide();
     if (!side) return [];
     return [
-      this.button(t, "move", side === "left" ? "⇄ sağa" : "⇄ sola", () => moveDock()),
+      this.button(t, "move", side === "left" ? "⇄ right" : "⇄ left", () => moveDock()),
       this.button(t, "hide", "–", () => hideDock()),
     ];
   }
 
   groupHeader(t, g) {
     const lead = g.lead;
-    const name = lead ? providerOf(lead) : "Yöneticisiz";
+    const name = lead ? providerOf(lead) : "No lead";
     const place = g.where ?? (g.leadAddress ? machineOf(g.leadAddress) : null);
     const pic = lead ? icon(lead.program, 12, t.foreground) : null;
     return h_flex()
@@ -203,11 +203,11 @@ export default class GorevPanosu extends View {
       .text_color(t.dim)
       .when(Boolean(pic), (el) => el.child(pic))
       .child(div().flex_none().font_semibold().text_color(t.muted).child(name))
-      .child(div().flex_none().child("yönetiyor"))
+      .child(div().flex_none().child("leads"))
       .when(Boolean(place), (el) => el.child(div().truncate().child(`· ${place}`)));
   }
 
-  // "✓ Kullanım panosunu yaz        OpenCode · 11dk" — one line per task; the
+  // "✓ Write the usage board       OpenCode · 11m" — one line per task; the
   // status word only when it needs the person (waiting, failed, stopped).
   row(t, { t: task, status }, now) {
     const live = task.state === "live";
@@ -239,12 +239,12 @@ export default class GorevPanosu extends View {
       .p(16)
       .gap(6)
       .text_color(t.muted)
-      .child("Henüz görev yok.")
+      .child("No tasks yet.")
       .child(
         div()
           .text_size(11)
           .text_color(t.dim)
-          .child("Yönetici ajan bir işi başka bir sağlayıcıya `task` etiketiyle verdiğinde burada görünür."),
+          .child("Tasks show up here when an agent starts another one with a `task` label."),
       );
   }
 
@@ -259,13 +259,13 @@ export default class GorevPanosu extends View {
     const list = groups([...live, ...ended], everyone, reported);
     const now = Date.now();
     return v_flex()
-      .id("gorev-panosu")
+      .id("task-board")
       .size_full()
       .text_size(13)
       .child(this.header(t, list))
       .child(
         v_flex()
-          .id("gorev-list")
+          .id("task-list")
           .flex_1()
           .min_h(0)
           .pb(8)

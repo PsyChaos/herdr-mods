@@ -1,25 +1,25 @@
 # herdr-mods
 
 Two panels for the [Herdr](https://herdr.dev) app, for working with several
-coding agents at once. Their interface text is Turkish.
+coding agents at once.
 
 | Mod | What it shows |
 |---|---|
-| [`gorev-panosu`](gorev-panosu/) | **Task board.** Which agent hands out work, which tasks it started, which provider runs each one, for how long, and how it ended. |
-| [`kullanim-panosu`](kullanim-panosu/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included. |
+| [`task-board`](task-board/) | **Task board.** Which agent hands out work, which tasks it started, which provider runs each one, for how long, and how it ended. |
+| [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included. |
 
 <p>
-  <img src="gorev-panosu/preview.png" alt="Görev panosu" width="260">
-  <img src="kullanim-panosu/preview.png" alt="Kullanım panosu" width="268">
+  <img src="task-board/preview.png" alt="Task board" width="258">
+  <img src="usage-board/preview.png" alt="Usage board" width="258">
 </p>
 
 ## Install
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/gorev-panosu herdr-mods/kullanim-panosu ~/.config/herdr-app/mods/
-herdr-app check ~/.config/herdr-app/mods/gorev-panosu
-herdr-app check ~/.config/herdr-app/mods/kullanim-panosu
+cp -r herdr-mods/task-board herdr-mods/usage-board ~/.config/herdr-app/mods/
+herdr-app check ~/.config/herdr-app/mods/task-board
+herdr-app check ~/.config/herdr-app/mods/usage-board
 ```
 
 Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
@@ -27,8 +27,8 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
 
 ```json
 "global": {
-  "ctrl-shift-g": "mod.open:gorev-panosu",
-  "ctrl-shift-j": "mod.open:kullanim-panosu"
+  "ctrl-shift-g": "mod.open:task-board",
+  "ctrl-shift-j": "mod.open:usage-board"
 }
 ```
 
@@ -51,8 +51,8 @@ In `~/.config/herdr-app/layouts/my-main.json`, add these blocks to the
 `children` of the node with `"id": "sidebar-lists"` (under Spaces and Agents):
 
 ```json
-{ "id": "tasks", "type": "block", "size": { "weight": 1 }, "min": 90, "content": { "mod": "gorev-panosu" } },
-{ "id": "usage", "type": "block", "size": { "weight": 1 }, "min": 90, "content": { "mod": "kullanim-panosu" } }
+{ "id": "tasks", "type": "block", "size": { "weight": 1 }, "min": 90, "content": { "mod": "task-board" } },
+{ "id": "usage", "type": "block", "size": { "weight": 1 }, "min": 90, "content": { "mod": "usage-board" } }
 ```
 
 Each docked panel gets "⇄" to move between the left sidebar and the right of
@@ -83,15 +83,15 @@ task to jump to its agent.
 
 ## Adding a provider to the usage panel
 
-Put a script in `kullanim-panosu/sources/<provider>.sh` that prints one line of
-JSON as described in [`CONTRACT.md`](kullanim-panosu/CONTRACT.md). The panel
+Put a script in `usage-board/sources/<provider>.sh` that prints one line of
+JSON as described in [`CONTRACT.md`](usage-board/CONTRACT.md). The panel
 picks it up on the next refresh and runs it on every machine.
 
 ## What these mods do on your machine
 
-- **gorev-panosu** runs `hc get` and `hc rm` on finished task terminals and
+- **task-board** runs `hc get` and `hc rm` on finished task terminals and
   keeps up to 50 finished tasks in Herdr's shared state. No network access.
-- **kullanim-panosu** runs its `sources/*.sh` scripts every 2 minutes, here and
+- **usage-board** runs its `sources/*.sh` scripts every 2 minutes, here and
   on each connected Herdr machine (the script text is sent and run there;
   nothing is installed).
   - `claude.sh` reads your Claude Code login (`CLAUDE_CONFIG_DIR` or

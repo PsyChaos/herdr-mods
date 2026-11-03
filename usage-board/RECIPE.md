@@ -1,24 +1,23 @@
-# Kullanım panosu
+# Usage board
 
 A compact usage panel: for every provider and every Herdr machine, how full
 the 5-hour and weekly limits are and when they reset. Ships with readers for
-Claude Code and Codex; any provider can be added as one shell script. The
-interface text is Turkish.
+Claude Code and Codex; any provider can be added as one shell script.
 
-![Kullanım panosu](preview.png)
+![Usage board](preview.png)
 
 ## What you see
 
-- **Header** (32px, bottom border): "Kullanım" 12px semibold, a braille
+- **Header** (32px, bottom border): "Usage" 12px semibold, a braille
   spinner while reading, then "↻" (refresh) and "✕" (window) or
-  "⇄ sağa"/"⇄ sola" and "–" (docked). Buttons never shrink.
-- **Machine groups**: "BU BİLGİSAYAR" or the machine name, 10px uppercase `dim`.
+  "⇄ right"/"⇄ left" and "–" (docked). Buttons never shrink.
+- **Machine groups**: "THIS COMPUTER" or the machine name, 10px uppercase `dim`.
 - **Provider rows**: name 12px semibold, plan in 10px `dim`, and on the right
-  only a note that matters: "eski veri" (every window stale), the data's age
-  when older than 30 minutes, "bağlanıyor…", or the error in `blocked`.
-- **Window lines** (10px): label ("5 saat", "Hafta") 34px, a 4px bar that fills
-  in proportion, the percent 34px, the reset clock 46px ("16:40" today,
-  "9.11." another day, "geçti" when past).
+  only a note that matters: "stale" (every window stale), the data's age
+  when older than 30 minutes ("2h ago"), "connecting…", or the error in `blocked`.
+- **Window lines** (10px): label ("5h", "Week") 34px, a 4px bar that fills
+  in proportion, the percent 34px ("8%"), the reset clock 46px ("16:40" today,
+  "Nov 9" another day, "passed" when past).
 
 ## How it behaves
 
@@ -29,7 +28,7 @@ interface text is Turkish.
 - For each `sources/<provider>.sh` and each machine in `machines()`: this
   computer runs the file with `exec("sh", [path])`; another machine gets the
   script's text with `exec("sh", ["-c", text], { on: machine })`, so nothing is
-  installed there. Unavailable or loading machines show "bağlanıyor…".
+  installed there. Unavailable or loading machines show "connecting…".
 - Each script prints one JSON line (see `CONTRACT.md`); a missing script, bad
   JSON or `ok: false` becomes a readable one-line error, never a crash.
 - Docked: "⇄" moves the block between the left sidebar and a 260px card right
@@ -38,7 +37,7 @@ interface text is Turkish.
 ## Built from
 
 - `main.js` (view), `dock.js` (block id `usage`), `mod.json` (`place: none`,
-  kept 420×420 px window, `key: kullanim-panosu`), `CONTRACT.md`,
+  kept 420×420 px window, `key: usage-board`), `CONTRACT.md`,
   `sources/claude.sh`, `sources/codex.sh`.
 - `sources/claude.sh`: reads the Claude Code login from `CLAUDE_CONFIG_DIR`, or
   the `~/.claude*` folder whose `.credentials.json` changed last, and asks
@@ -55,9 +54,9 @@ interface text is Turkish.
 ## Watch out
 
 - The Claude endpoint is undocumented and may change. It refuses requests
-  without a User-Agent (403); the script sends `kullanim-panosu/1.0`.
+  without a User-Agent (403); the script sends `usage-board/1.0`.
 - Codex only records limits when it runs, so a machine where Codex is idle shows
-  old numbers; that's what `stale` and "eski veri" are for.
+  old numbers; that's what `stale` is for.
 - The mod runtime's `fs` has no `readdir`; list `sources/` with `exec("sh", …)`.
 - Overlay `width`/`height` of 1 or less are a share of the window, not pixels.
 - `.children()` needs an array; a single element throws "value is not iterable",

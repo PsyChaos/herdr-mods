@@ -109,7 +109,7 @@ def win(id_, label, c):
         w["stale"] = True  # observation predates the reset: data is old
     return w
 
-windows = [w for w in (win("5h", "5 saat", fiveh), win("week", "Haftalık", week)) if w]
+windows = [w for w in (win("5h", "5h", fiveh), win("week", "Week", week)) if w]
 
 plan = rl.get("plan_type")
 out = {

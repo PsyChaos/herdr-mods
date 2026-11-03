@@ -13,7 +13,7 @@ const LEFT_BLOCK = {
   type: "block",
   size: { weight: 1 },
   min: 90,
-  content: { mod: "kullanim-panosu" },
+  content: { mod: "usage-board" },
 };
 
 const RIGHT_BLOCK = {
@@ -25,7 +25,7 @@ const RIGHT_BLOCK = {
   background: "chrome",
   radius: 10,
   border: { width: 1, color: "border" },
-  content: { mod: "kullanim-panosu" },
+  content: { mod: "usage-board" },
 };
 
 function parentOf(node, id, parent = null) {

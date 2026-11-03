@@ -1,34 +1,34 @@
-# Görev panosu
+# Task board
 
 A task board for agents handing work to other agents. When a lead agent starts
 helpers with a `task` label, the board lists each task under the agent that
 started it, with the provider doing it (Claude Code, Codex, OpenCode…), how
-long it has run and how it ended. The interface text is Turkish.
+long it has run and how it ended.
 
-![Görev panosu](preview.png)
+![Task board](preview.png)
 
 ## What you see
 
-- **Header** (32px, bottom border `border`): "Görevler" in 12px semibold, then
-  "N aktif · M biten" in 10px `dim` that truncates first when narrow, then
-  buttons that never shrink: "Temizle" (only when something finished), and
-  either "✕" (window) or "⇄ sağa"/"⇄ sola" and "–" (docked).
+- **Header** (32px, bottom border `border`): "Tasks" in 12px semibold, then
+  "N active · M done" in 10px `dim` that truncates first when narrow, then
+  buttons that never shrink: "Clear" (only when something finished), and
+  either "✕" (window) or "⇄ right"/"⇄ left" and "–" (docked).
 - **Groups**: one per lead (the tasks' parent terminal). A 10px `dim` line:
-  lead's program icon (12px), its name in `muted` semibold, "yönetiyor",
+  lead's program icon (12px), its name in `muted` semibold, "leads",
   "· <space / tab>" from the task's `where` label. Tasks without a parent
-  group under "Yöneticisiz".
+  group under "No lead".
 - **Rows**: one 12px line per task: a 12px glyph, the `task` label (truncates),
   and on the right in 10px "<provider> · <duration>". Live rows are clickable
   (hover `hover`).
-- Empty: "Henüz görev yok." and a 11px hint about the `task` label.
+- Empty: "No tasks yet." and a 11px hint about the `task` label.
 
 ## How it behaves
 
 - Status glyph and color (`theme()[status]`): working/running → braille spinner
   (`.frames`, 90 ms) in `working`; blocked → ● `blocked` and the word
-  "seni bekliyor"; idle → ● `idle`; finished → ✓ `done`; failed (non-zero
-  exit) → ✗ and "başarısız"; stopped (signal, unknown exit, or killed while
-  working) → ● and "durduruldu". A task killed after it went idle counts as
+  "needs you"; idle → ● `idle`; finished → ✓ `done`; failed (non-zero
+  exit) → ✗ and "failed"; stopped (signal, unknown exit, or killed while
+  working) → ● and "stopped". A task killed after it went idle counts as
   finished (OpenCode exits 0 when killed, so hc's `reason: killed` decides).
 - Order: groups by their most urgent task; inside a group blocked/failed first,
   then working, done, idle, finished; newest first within a rank.
@@ -37,7 +37,7 @@ long it has run and how it ended. The interface text is Turkish.
 - Finished tasks leave `terminals()`. The board remembers every live task it
   sees; when one disappears it runs `hc get <address>` once and stores the
   result (exit code, signal, reason, finish time, last status) in shared state
-  `gorev-panosu.finished` (newest 50). "Temizle" clears those and runs
+  `task-board.finished` (newest 50). "Clear" clears those and runs
   `hc rm` for each.
 - Durations re-render every 30 s (`cx.timer.every`); nothing else polls.
 - Docked: "⇄" moves the block between the left sidebar (under the agents list)
@@ -47,7 +47,7 @@ long it has run and how it ended. The interface text is Turkish.
 ## Built from
 
 - `main.js`: the view; `dock.js`: dock side detection and moves; `mod.json`:
-  `place: none`, a kept 460×520 px window overlay (`key: gorev-panosu`).
+  `place: none`, a kept 460×520 px window overlay (`key: task-board`).
 - Herdr: `terminals()` (labels, parent, state, status, program, created_ms),
   `agents()` (status), `panes()`, `shared`/`setShared`, `run` (`pane.focus`,
   `terminal.peek`, `layout.set`, `layout.hide`), `exec("hc", ["get"|"rm", …])`,
@@ -70,8 +70,8 @@ long it has run and how it ended. The interface text is Turkish.
 ## Done when
 
 - `herdr-app check` passes.
-- `hc run --bg --label task="Deneme" -- sh -c 'sleep 3; exit 0'` shows a
-  spinner row under your agent, then ✓ "tamamlandı" after it ends; `exit 1`
-  shows ✗ "başarısız"; `hc kill` on a running one shows "durduruldu".
-- "Temizle" empties the finished rows; docked "⇄" moves the board and the
+- `hc run --bg --label task="Try it" -- sh -c 'sleep 3; exit 0'` shows a
+  spinner row under your agent, then ✓ after it ends; `exit 1` shows ✗ "failed";
+  `hc kill` on a running one shows "stopped".
+- "Clear" empties the finished rows; docked "⇄" moves the board and the
   button flips to the other side.

@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Task board",
+  "overlay": { "kind": "window", "key": "task-board", "keep": true, "width": 460, "height": 520 }
+}

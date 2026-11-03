@@ -45,8 +45,8 @@ empty = {
     "label": "Claude",
     "plan": None,
     "windows": [
-        {"id": "5h", "label": "5 saat", "used_percent": None, "resets_at": None},
-        {"id": "week", "label": "Haftalık", "used_percent": None, "resets_at": None},
+        {"id": "5h", "label": "5h", "used_percent": None, "resets_at": None},
+        {"id": "week", "label": "Week", "used_percent": None, "resets_at": None},
     ],
     "updated_at": now_iso(),
     "source": "https://claude.ai/api/oauth/usage (Claude Code CLI /usage resource)",
@@ -87,7 +87,7 @@ req = urllib.request.Request(
     "https://claude.ai/api/oauth/usage",
     headers={
         "Authorization": "Bearer " + token,
-        "User-Agent": "kullanim-panosu/1.0 (herdr mod)",
+        "User-Agent": "usage-board/1.0 (herdr mod)",
         "Accept": "application/json",
     },
 )
@@ -130,8 +130,8 @@ out({
     "ok": True,
     "plan": plan,
     "windows": [
-        {"id": "5h", "label": "5 saat", "used_percent": h_pct, "resets_at": h_res},
-        {"id": "week", "label": "Haftalık", "used_percent": w_pct, "resets_at": w_res},
+        {"id": "5h", "label": "5h", "used_percent": h_pct, "resets_at": h_res},
+        {"id": "week", "label": "Week", "used_percent": w_pct, "resets_at": w_res},
     ],
     "updated_at": now_iso(),
     "source": "https://claude.ai/api/oauth/usage (Claude Code CLI /usage resource)",

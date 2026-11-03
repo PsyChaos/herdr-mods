@@ -1,5 +1,0 @@
-{
-  "place": "none",
-  "title": "Görev panosu",
-  "overlay": { "kind": "window", "key": "gorev-panosu", "keep": true, "width": 460, "height": 520 }
-}

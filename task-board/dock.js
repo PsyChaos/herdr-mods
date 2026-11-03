@@ -13,7 +13,7 @@ const LEFT_BLOCK = {
   type: "block",
   size: { weight: 1 },
   min: 90,
-  content: { mod: "gorev-panosu" },
+  content: { mod: "task-board" },
 };
 
 const RIGHT_BLOCK = {
@@ -25,7 +25,7 @@ const RIGHT_BLOCK = {
   background: "chrome",
   radius: 10,
   border: { width: 1, color: "border" },
-  content: { mod: "gorev-panosu" },
+  content: { mod: "task-board" },
 };
 
 function parentOf(node, id, parent = null) {
