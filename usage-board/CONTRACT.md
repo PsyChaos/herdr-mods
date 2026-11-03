@@ -28,3 +28,10 @@ Optional per window: `"stale": true` when `resets_at` is already in the past, i.
 numbers come from a window that has since reset (the provider wasn't used on this
 machine since). The panel shows such a window dimmed and marked "stale" instead of
 treating the percentage as current.
+
+Optional, for providers with no limit window (OpenCode): `"totals"`, plain lines
+shown under the provider instead of bars, e.g.
+`[{ "id": "today", "label": "Today", "text": "312k tokens · 6 prompts" }]`.
+
+`{"provider": "...", "skip": true}`: the provider isn't installed on that machine;
+the board shows no row for it there.

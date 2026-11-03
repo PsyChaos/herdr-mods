@@ -1,8 +1,11 @@
 // Task board: which agent leads, which tasks it handed out, and which
 // provider works on each one right now.
 //
-// A task is any terminal started with a `task` label, usually by a lead agent:
+// A task is any terminal another terminal started (`hc run` records the
+// starter as its parent), whatever the provider, plus any terminal with a
+// `task` label. The label, when there is one, is the task's title:
 //   hc run --bg --name <slug> --label task="<title>" --label role=<role> <agent> "<task>"
+// Without it the title is the first sentence of the prompt the agent got.
 // Tasks are grouped under the terminal that started them (their parent).
 // Runs as a window (ctrl-shift-g, "mod.open:task-board") or docked in a
 // personal layout as block `tasks` (see dock.js).
@@ -72,6 +75,7 @@ const snapshot = (t) => ({
   program: t.program,
   agent: t.agent,
   argv: t.argv?.slice(0, 1),
+  board_title: titleOf(t),
   parent: t.parent,
   created_ms: t.created_ms,
   last_status: t.status ?? null,
@@ -81,6 +85,27 @@ const history = () => shared(HISTORY_KEY) ?? [];
 
 const providerOf = (t) => t.program?.name || t.agent || t.argv?.[0] || "?";
 
+const isTask = (t) => Boolean(t.labels?.task || t.parent);
+
+const TITLE_MAX = 80;
+
+// "Review src/auth. Report with hc send…" -> "Review src/auth."
+function firstSentence(text) {
+  const first = text.trim().split(/\n|(?<=[.!?])\s/)[0].trim();
+  return first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX - 1)}…` : first;
+}
+
+// The `task` label; else the agent's prompt (its longest argument with a
+// space in it); else the terminal's name or command.
+function titleOf(t) {
+  if (t.labels?.task) return t.labels.task;
+  if (t.board_title) return t.board_title;
+  const words = (t.argv ?? []).slice(1).filter((a) => typeof a === "string" && a.includes(" ") && !a.startsWith("-"));
+  const prompt = words.sort((a, b) => b.length - a.length)[0];
+  if (prompt) return firstSentence(prompt);
+  return t.name || (t.argv ?? []).join(" ") || t.address;
+}
+
 // Tasks grouped by the terminal that started them, groups with urgent work first.
 function groups(tasks, everyone, reported) {
   const byAddress = new Map(everyone.map((t) => [t.address, t]));
@@ -88,7 +113,7 @@ function groups(tasks, everyone, reported) {
   for (const task of tasks) {
     const lead = parentOf(task);
     const key = lead ?? "";
-    if (!map.has(key)) map.set(key, { lead: byAddress.get(lead) ?? null, leadAddress: lead, where: task.labels.where, tasks: [] });
+    if (!map.has(key)) map.set(key, { lead: byAddress.get(lead) ?? null, leadAddress: lead, where: task.labels?.where, tasks: [] });
     map.get(key).tasks.push({ t: task, status: statusOf(task, reported) });
   }
   const rank = (s) => ORDER[s] ?? 9;
@@ -230,7 +255,7 @@ export default class TaskBoard extends View {
       .text_size(12)
       .when(live, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click(() => this.open(task)))
       .child(div().w(12).flex_none().text_size(11).text_color(color).when(spinning, (el) => el.frames(SPIN, 90)).child(glyph))
-      .child(div().flex_1().min_w(0).truncate().text_color(live ? t.foreground : t.muted).child(task.labels.task))
+      .child(div().flex_1().min_w(0).truncate().text_color(live ? t.foreground : t.muted).child(titleOf(task)))
       .child(div().flex_none().text_size(10).text_color(loud ? color : t.dim).child(meta.join(" · ")));
   }
 
@@ -244,7 +269,7 @@ export default class TaskBoard extends View {
         div()
           .text_size(11)
           .text_color(t.dim)
-          .child("Tasks show up here when an agent starts another one with a `task` label."),
+          .child("Tasks show up here when an agent starts another one with `hc run`."),
       );
   }
 
@@ -252,7 +277,7 @@ export default class TaskBoard extends View {
     const t = theme();
     const reported = new Map(agents().map((a) => [a.address, a.status]));
     const everyone = terminals();
-    const live = everyone.filter((x) => x.labels?.task);
+    const live = everyone.filter(isTask);
     this.track(live.filter((x) => x.state === "live"), cx);
     const liveAddresses = new Set(live.map((x) => x.address));
     const ended = history().filter((h) => !liveAddresses.has(h.address));

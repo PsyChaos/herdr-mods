@@ -1,9 +1,10 @@
 # Task board
 
 A task board for agents handing work to other agents. When a lead agent starts
-helpers with a `task` label, the board lists each task under the agent that
-started it, with the provider doing it (Claude Code, Codex, OpenCode…), how
-long it has run and how it ended.
+helpers with `hc run`, the board lists each one under the agent that started
+it, with the provider doing it (Claude Code, Codex, OpenCode…), how long it has
+run and how it ended. It works with any provider and needs no setup: Herdr
+records who started each terminal.
 
 ![Task board](preview.png)
 
@@ -17,10 +18,10 @@ long it has run and how it ended.
   lead's program icon (12px), its name in `muted` semibold, "leads",
   "· <space / tab>" from the task's `where` label. Tasks without a parent
   group under "No lead".
-- **Rows**: one 12px line per task: a 12px glyph, the `task` label (truncates),
+- **Rows**: one 12px line per task: a 12px glyph, the title (truncates),
   and on the right in 10px "<provider> · <duration>". Live rows are clickable
   (hover `hover`).
-- Empty: "No tasks yet." and a 11px hint about the `task` label.
+- Empty: "No tasks yet." and a 11px hint about `hc run`.
 
 ## How it behaves
 
@@ -52,7 +53,12 @@ long it has run and how it ended.
   `agents()` (status), `panes()`, `shared`/`setShared`, `run` (`pane.focus`,
   `terminal.peek`, `layout.set`, `layout.hide`), `exec("hc", ["get"|"rm", …])`,
   `props().overlay`/`closeOverlay`, `layout()`.
-- A task is any terminal started like
+- A task is any terminal with a `parent` (started by another one with
+  `hc run`), or with a `task` label. Title: the `task` label; else the first
+  sentence of the longest argument containing a space (the agent's prompt),
+  80 characters at most; else the terminal's name or command. Kept in the
+  history entry as `board_title`.
+- A lead can still set the title and role:
   `hc run --bg --name <slug> --label task="<title>" --label role=<role> <agent> "<task>"`.
 
 ## Watch out
@@ -70,8 +76,8 @@ long it has run and how it ended.
 ## Done when
 
 - `herdr-app check` passes.
-- `hc run --bg --label task="Try it" -- sh -c 'sleep 3; exit 0'` shows a
-  spinner row under your agent, then ✓ after it ends; `exit 1` shows ✗ "failed";
+- From an agent's terminal, `hc run --bg -- sh -c 'sleep 3' sh "Try the board. More text."`
+  shows a spinner row "Try the board." under that agent, then ✓ after it ends; `exit 1` shows ✗ "failed";
   `hc kill` on a running one shows "stopped".
 - "Clear" empties the finished rows; docked "⇄" moves the board and the
   button flips to the other side.

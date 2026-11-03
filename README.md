@@ -6,7 +6,7 @@ agents at once.
 | Mod | What it shows |
 |---|---|
 | [`task-board`](task-board/) | **Task board.** Which agent hands out work, which tasks it started, which provider runs each one, for how long, and how it ended. |
-| [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included. |
+| [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
 
 <p>
@@ -82,16 +82,20 @@ receive Herdr's later changes to the main layout.
 
 ## Using the task board
 
-A task is any terminal started with a `task` label, usually by an agent that
-splits work among others:
+A task is any terminal an agent starts with `hc run`, whichever provider
+either of them is. Herdr records who started it, so the board needs no setup.
+The title is the first sentence of the prompt the helper got:
 
 ```sh
-hc run --bg --name review --label task="Review the auth module" --label role=reviewer \
-  codex "Review src/auth. Report with hc send $HC_TERMINAL_ID when done."
+hc run --bg --name review codex "Review src/auth. Report with hc send $HC_TERMINAL_ID when done."
 ```
 
-Tell your lead agent to label the work it hands out this way. Click a running
+shows as "Review src/auth." under the agent that ran it. A `task` label sets
+the title yourself (`--label task="Review the auth module"`). Click a running
 task to jump to its agent.
+
+The board only sees helpers started through Herdr. Sub-agents a provider runs
+inside its own process (Claude Code's or Codex's built-in ones) don't show.
 
 ## Using the browser
 
@@ -124,6 +128,8 @@ picks it up on the next refresh and runs it on every machine.
     uses. The token is never printed, stored or refreshed. This endpoint is not
     documented and may change.
   - `codex.sh` only reads `~/.codex/sessions`. No network access.
+  - `opencode.sh` runs `opencode stats --standalone` (OpenCode's own
+    statistics, from its local database). Machines without OpenCode get no row.
 
 Both need `python3`.
 

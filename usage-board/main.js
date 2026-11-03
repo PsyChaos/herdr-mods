@@ -159,6 +159,12 @@ export default class UsageBoard extends View {
       return { machine: machine.name, provider, label: provider, error: "Output isn't valid JSON" };
     }
     if (!data || typeof data !== "object") return { machine: machine.name, provider, label: provider, error: "Output isn't a JSON object" };
+    // The provider isn't installed on that machine: no row at all.
+    if (data.skip === true) return { machine: machine.name, provider, skip: true };
+    // Providers without a limit window can report plain totals instead.
+    const totals = (Array.isArray(data.totals) ? data.totals : [])
+      .filter((x) => x && typeof x === "object" && x.text != null)
+      .map((x) => ({ id: String(x.id ?? x.label ?? ""), label: String(x.label ?? x.id ?? ""), text: String(x.text) }));
     const windows = (Array.isArray(data.windows) ? data.windows : [])
       .filter((w) => w && typeof w === "object" && Number.isFinite(Number(w.used_percent)))
       .map((w) => ({ ...w, used_percent: clamp(Number(w.used_percent)), stale: w.stale === true }));
@@ -168,6 +174,7 @@ export default class UsageBoard extends View {
       label: data.label ?? data.provider ?? provider,
       plan: data.plan ?? null,
       windows,
+      totals,
       updated_at: data.updated_at ?? null,
       source: data.source ?? null,
       error: data.error ?? (data.ok === false ? "Couldn't read usage" : null),
@@ -178,7 +185,12 @@ export default class UsageBoard extends View {
   // Every row has a windows list, even an error or waiting one.
   add(entry) {
     if (!entry) return;
-    this.entries.set(joinKey(entry.machine, entry.provider), { windows: [], ...entry, windows: entry.windows ?? [] });
+    const key = joinKey(entry.machine, entry.provider);
+    if (entry.skip) {
+      this.entries.delete(key);
+      return;
+    }
+    this.entries.set(key, { ...entry, windows: entry.windows ?? [], totals: entry.totals ?? [] });
   }
 
   button(t, id, label, onClick) {
@@ -266,10 +278,22 @@ export default class UsageBoard extends View {
           .when(Boolean(note), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(note))),
       )
       .when(Boolean(e.error), (el) => el.child(div().truncate().text_size(10).text_color(t.blocked).child(e.error)))
-      .when(!e.error && !e.wait && e.windows.length === 0, (el) =>
+      .when(!e.error && !e.wait && e.windows.length === 0 && e.totals.length === 0, (el) =>
         el.child(div().text_size(10).text_color(t.dim).child("no data")),
       )
-      .children(e.windows.map((w) => this.windowLine(t, e, w)));
+      .children(e.windows.map((w) => this.windowLine(t, e, w)))
+      .children(e.totals.map((x) => this.totalLine(t, e, x)));
+  }
+
+  // "Today  312k tokens · 6 prompts" — for providers without a limit window.
+  totalLine(t, e, x) {
+    return h_flex()
+      .id(`x-${e.machine ?? "local"}-${e.provider}-${x.id}`)
+      .gap(6)
+      .items_center()
+      .text_size(10)
+      .child(div().w(34).flex_none().truncate().text_color(t.muted).child(x.label))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(x.text));
   }
 
   // "5s  ▬▬▬──────  %8  16:39" — label, bar, percent, reset clock.
