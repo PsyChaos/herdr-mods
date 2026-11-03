@@ -109,6 +109,14 @@ machine chosen, terminal-browser loads pages through it over ssh (`--ssh`), so
 `localhost` means that machine: a dev server running there opens as it is. This
 needs ssh to that machine without a password prompt.
 
+A file path works too: `~/report.html`, `/tmp/screenshot.png`, a PDF, or a folder
+for its listing. The file is read on the "Load through" machine. The mod starts
+a small web server there (`python3 -m http.server`, bound to `127.0.0.1` only)
+in the file's folder, so a page's own images and styles load with it, and opens
+that. The server stops when the browser pane closes, and after 12 hours at the
+latest. While it runs, other local users of that machine could read the folder
+too.
+
 ## Adding a provider to the usage panel
 
 Put a script in `usage-board/sources/<provider>.sh` that prints one line of
