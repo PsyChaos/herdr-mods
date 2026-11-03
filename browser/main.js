@@ -9,6 +9,9 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme, focused, spaces, machines, terminals, panes, hc, exec, shared, setShared } from "herdr";
 
 const LAST_URL = "browser.last-url";
+// {url, machine, at} from another mod; older than this, it's stale and ignored.
+const BROWSER_REQUEST = "browser.request";
+const REQUEST_FRESH_MS = 5000;
 const PANE_WAIT_MS = 4000;
 const POLL_MS = 50;
 const SERVER_WAIT_S = "10";
@@ -65,7 +68,13 @@ export default class Browser extends View {
     this.busy = false;
     this.installed = true;
 
-    const last = shared(LAST_URL) ?? "";
+    // Another mod (ports) can ask for an address on a machine: it opens at once.
+    const asked = shared(BROWSER_REQUEST);
+    const request = asked && Date.now() - (asked.at ?? 0) < REQUEST_FRESH_MS ? asked : null;
+    if (asked) setShared(BROWSER_REQUEST, null);
+    if (request) this.machine = request.machine ?? null;
+
+    const last = request?.url ?? shared(LAST_URL) ?? "";
     this.input = InputState.new({ placeholder: "localhost:3000, an address, or a file path (~/page.html)", value: last });
     if (last) this.input.set_selected_range({ start: 0, end: last.length });
     this.input.on("submit", (_e, cx) => this.open(cx));
@@ -82,6 +91,7 @@ export default class Browser extends View {
         for (const m of JSON.parse(list?.stdout ?? "{}").machines ?? []) this.targets[m.name] = m.target || m.name;
       } catch { /* names are used as ssh targets then */ }
       cx.notify();
+      if (request) this.open(cx);
     });
   }
 

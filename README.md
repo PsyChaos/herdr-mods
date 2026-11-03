@@ -8,6 +8,7 @@ agents at once.
 | [`task-board`](task-board/) | **Task board.** Which agent hands out work, which tasks it started, which provider runs each one, for how long, and how it ended. |
 | [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
+| [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, or jump to its terminal. |
 
 <p>
   <img src="task-board/preview.png" alt="Task board" width="258">
@@ -19,10 +20,11 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports ~/.config/herdr-app/mods/
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
 herdr-app check ~/.config/herdr-app/mods/browser
+herdr-app check ~/.config/herdr-app/mods/ports
 ```
 
 The browser mod also needs [terminal-browser](https://github.com/zenbu-labs/terminal-browser)
@@ -39,13 +41,14 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
 "global": {
   "ctrl-shift-g": "mod.open:task-board",
   "ctrl-shift-j": "mod.open:usage-board",
-  "ctrl-shift-u": "mod.open:browser"
+  "ctrl-shift-u": "mod.open:browser",
+  "ctrl-shift-y": "mod.open:ports"
 }
 ```
 
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
-asks for an address to open.
+asks for an address to open, and `Ctrl+Shift+Y` lists the ports.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
 repository. Each folder has a `RECIPE.md` it can follow.
@@ -117,6 +120,18 @@ that. The server stops when the browser pane closes, and after 12 hours at the
 latest. While it runs, other local users of that machine could read the folder
 too.
 
+## Using the ports panel
+
+`Ctrl+Shift+Y` lists what you or your agents started: containers, and
+programs running in a folder under your home. "Show all" adds system ports and
+ones programs picked for themselves. Type to search all of them by port,
+program, container, folder or machine (`3000`, `node miloobi`, `5432`); Enter
+opens the first match in the browser.
+
+"Open" loads the page with the browser mod, through the port's machine.
+"Terminal" goes to the Herdr terminal the program was started in. "network"
+marks a port other computers can reach, not only its own machine.
+
 ## Adding a provider to the usage panel
 
 Put a script in `usage-board/sources/<provider>.sh` that prints one line of
@@ -140,6 +155,11 @@ picks it up on the next refresh and runs it on every machine.
     statistics, from its local database). Machines without OpenCode get no row.
 
 Both need `python3`.
+
+- **ports** runs a short Python script every 10 seconds, here and on each
+  connected Herdr machine (sent with `hc exec`, nothing is installed). It only
+  reads: `ss -ltnp`, `docker ps`, and `/proc` for your own processes' command,
+  folder and Herdr terminal. No network access. It needs `python3`.
 
 - **browser** runs `terminal-browser` on this computer when you open a page,
   with its usage statistics turned off (`DO_NOT_TRACK=1`). For another

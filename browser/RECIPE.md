@@ -54,6 +54,10 @@ A dialog, 460px wide, on `popover`:
   place, so the browser gets its own tab. If that fails too, it ends the browser
   and its server and says so. Ctrl+Q in the browser ends it and closes its pane.
 - The address is kept in shared state `browser.last-url`.
+- Another mod can ask for a page: shared state `browser.request` set to
+  `{url, machine, at}`, then `mod.open browser`. A request younger than 5
+  seconds is cleared, its machine chosen and its address opened at once (the
+  [ports](../ports/) mod's "Open").
 
 ## Built from
 
