@@ -8,7 +8,7 @@ agents at once.
 | [`task-board`](task-board/) | **Task board.** Which agent hands out work, which tasks it started, which provider runs each one, for how long, and how it ended. |
 | [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
-| [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, or jump to its terminal. |
+| [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
 | [`ci`](ci/) | **PRs & CI.** The open pull requests and CI runs of every repository in your spaces, on every Herdr machine, grouped by space. Notifies when a run finishes and shows a failed step's log, ready to copy to an agent. |
 
 <p>
@@ -132,7 +132,9 @@ program, container, folder or machine (`3000`, `node miloobi`, `5432`); Enter
 opens the first match in the browser.
 
 "Open" loads the page with the browser mod, through the port's machine.
-"Terminal" goes to the Herdr terminal the program was started in. "network"
+"Terminal" goes to the Herdr terminal the program was started in. "Stop"
+ends the program or container behind a port, after a confirmation that says
+what else stops with it; "Force stop" is offered only when it doesn't stop. "network"
 marks a port other computers can reach, not only its own machine.
 
 ## Using the PRs & CI panel
@@ -171,9 +173,11 @@ picks it up on the next refresh and runs it on every machine.
 Both need `python3`.
 
 - **ports** runs a short Python script every 10 seconds, here and on each
-  connected Herdr machine (sent with `hc exec`, nothing is installed). It only
-  reads: `ss -ltnp`, `docker ps`, and `/proc` for your own processes' command,
-  folder and Herdr terminal. No network access. It needs `python3`.
+  connected Herdr machine (sent with `hc exec`, nothing is installed). It
+  reads `ss -ltnp`, `docker ps`, and `/proc` for your own processes' command,
+  folder and Herdr terminal. No network access. It needs `python3`. Only
+  "Stop", after you confirm, changes anything: `kill` or `docker stop` on that
+  machine.
 
 - **ci** runs a Python script every minute (every 20 seconds while CI runs),
   here and on each connected Herdr machine (sent with `hc exec`, nothing is

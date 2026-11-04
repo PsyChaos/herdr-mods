@@ -2,7 +2,8 @@
 
 Which program or container listens on which TCP port, on this computer and on
 every connected Herdr machine. A row opens its page in the [browser](../browser/)
-mod, through that machine, or goes to the Herdr terminal that started it.
+mod, through that machine, goes to the Herdr terminal that started it, or
+stops what holds the port after you confirm it.
 
 ## What you see
 
@@ -26,7 +27,15 @@ A window, 540×560, that you can drag anywhere:
     computers can reach it;
   - "Open" unless the port never serves a page (ssh, mail, DNS, CUPS,
     databases, Redis, memcached; containers named like a database);
-  - "Terminal" when its Herdr terminal is known and live.
+  - "Terminal" when its Herdr terminal is known and live;
+  - "Stop" when the process is yours (it has a pid) or it is a container.
+- Under a row being stopped: a confirmation box with a `blocked` border,
+  "Stop <program> (pid N) on <machine>, listening on :<port>?", why to think
+  twice (the whole program ends, not only the port; the Herdr terminal it runs
+  in; that other computers use it; for a container, that its other ports stop
+  and a restart policy may bring it back), "Cancel" and a `blocked` "Stop".
+  Then "stopping…", or why it failed, or "Still listening" with "Force stop
+  (kill -9)".
 - A footer line explaining "network" and "Open".
 
 ## How it behaves
@@ -48,6 +57,12 @@ A window, 540×560, that you can drag anywhere:
 - "Open" sets shared state `browser.request` to `{url: "localhost:<port>",
   machine, at}` and runs `mod.open browser`. The browser mod opens a request
   younger than 5 seconds at once, loading it through that machine.
+- "Stop" on a container runs `docker stop <name>`; on a process, `kill -s TERM
+  <pid>`, but only if `ss -ltnpH "sport = :<port>"` still shows that pid (a pid
+  can be reused in the seconds since the list was read). Both run on the
+  port's machine. 2.5 seconds later the list is read again: the port is gone,
+  or the same pid still listens and "Force stop" sends KILL. Esc closes the
+  confirmation first.
 - "Terminal" matches `HC_TERMINAL_ID` to `terminals()` (`<machine>/<id>` for
   another machine) and runs `pane.focus` if the terminal has a pane, otherwise
   `terminal.peek`.
@@ -72,6 +87,7 @@ A window, 540×560, that you can drag anywhere:
 ## Done when
 
 - `herdr-app check` passes.
+- "Stop" on `python3 -m http.server 9999` asks first, then frees the port.
 - Ctrl+Shift+Y lists a dev server you started in a Herdr terminal, with
   "started in" and its folder; "Terminal" focuses that terminal.
 - "Open" on a port of another machine opens its page there.
