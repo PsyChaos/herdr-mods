@@ -7,6 +7,8 @@
 // folder and the Herdr terminal it inherited (HC_TERMINAL_ID), and `docker ps`
 // for container ports. Only your own processes show their program; ports held
 // by root show as "system".
+// "My browser" opens a page in your own browser; another machine's port comes
+// here through an ssh tunnel (a labelled Herdr terminal) first.
 // "Stop" ends the program or container behind a port, after you confirm it.
 // The search box filters every port, hidden ones too, by number, program,
 // container, folder, command, terminal or machine; Enter opens the first match.
@@ -14,7 +16,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { terminals, panes, machines, run, exec, hc, theme, props, closeOverlay, setShared } from "herdr";
+import { terminals, panes, machines, run, exec, hc, theme, props, closeOverlay, setShared, window as hostWindow } from "herdr";
 
 const REFRESH_MS = 10000;
 // The first port of the kernel's ephemeral range: above it are mostly ports a
@@ -25,6 +27,17 @@ const BROWSER_REQUEST = "browser.request";
 // Ports that never serve a web page, so no "Open" for them.
 const NOT_WEB = new Set([22, 25, 53, 631, 1025, 3306, 3307, 5037, 5353, 5355, 5432, 5433, 6379, 6380, 11211, 27017]);
 const NOT_WEB_NAME = /(postgres|mariadb|mysql|redis|mongo|-pg|_db_|-db-|mailpit-smtp)/i;
+// A tunnel's ssh ends on its own after this, like the browser mod's file server.
+const TUNNEL_LIFETIME = "12h";
+const TUNNEL_WAIT_MS = 6000;
+const POLL_MS = 250;
+// Where a tunnel goes when the remote port's number is taken here.
+const TUNNEL_FALLBACK_FROM = 40000;
+
+// Detached, so the browser it may start doesn't belong to Herdr's exec.
+const OPEN_SH = 'command -v setsid >/dev/null && exec setsid -f "$0" "$1" >/dev/null 2>&1; exec "$0" "$1" >/dev/null 2>&1 &';
+const LISTENING_SH = 'ss -ltnH "sport = :$1" | grep -q .';
+
 // Look again this long after a stop, to see whether the port is free.
 const STOP_CHECK_MS = 2500;
 
@@ -122,6 +135,15 @@ export default class Ports extends View {
     // The row waiting for "Stop" to be confirmed, and what happened to stops.
     this.confirming = null;
     this.stops = {};
+    // Per row: what "My browser" is doing ("connecting…" or an error).
+    this.tunnelNotes = {};
+    this.sshTargets = {};
+    cx.spawn(async (cx) => {
+      const list = await hc(["machine", "ls", "--json"]).catch(() => null);
+      try {
+        for (const m of JSON.parse(list?.stdout ?? "{}").machines ?? []) this.sshTargets[m.name] = m.target || m.name;
+      } catch { /* the machine's name is its ssh target then */ }
+    });
     this.search = InputState.new({ placeholder: "Search: 3000, node, redloop, ~/Projects…" });
     this.search.on("change", (_e, cx) => cx.notify());
     this.search.on("submit", () => this.openFirst());
@@ -286,6 +308,82 @@ export default class Ports extends View {
           .child("Stop")));
   }
 
+  // Live tunnels, by "machine:port": their terminal and the port here.
+  tunnels() {
+    const out = new Map();
+    for (const term of terminals()) {
+      if (term.state !== "live" || !term.labels?.tunnel) continue;
+      out.set(term.labels.tunnel, { address: term.address, local: Number(term.labels.tunnel_local) });
+    }
+    return out;
+  }
+
+  openUrl(url, key, cx) {
+    const opener = hostWindow()?.platform === "macos" ? "open" : "xdg-open";
+    exec("sh", ["-c", OPEN_SH, opener, url]).then((r) => {
+      if (r.code !== 0) { this.tunnelNotes[key] = `Couldn't open ${url}: ${(r.stderr || "").trim() || `exit ${r.code}`}`; cx.notify(); }
+    }).catch(() => null);
+  }
+
+  // A port here for the tunnel: the same number when it is free, else one above 40000.
+  freeLocalPort(port) {
+    const used = new Set((this.results[machineLabel(null)]?.ports ?? []).map((x) => x.port));
+    for (const t of this.tunnels().values()) used.add(t.local);
+    if (!used.has(port)) return port;
+    for (let candidate = TUNNEL_FALLBACK_FROM + (port % 10000); ; candidate += 1) if (!used.has(candidate)) return candidate;
+  }
+
+  async listening(port) {
+    const r = await exec("sh", ["-c", LISTENING_SH, "sh", String(port)]).catch(() => ({ code: 1 }));
+    return r.code === 0;
+  }
+
+  // Opens the port's page in your own browser. Another machine's port first gets
+  // an ssh tunnel to a port here: `ssh -N -L 127.0.0.1:<here>:localhost:<port>`,
+  // run as a Herdr terminal labelled tunnel=<machine>:<port>, so it shows, lasts
+  // after this window closes, and "Close tunnel" ends it.
+  myBrowser(machine, p, cx) {
+    const key = `${machineLabel(machine)}-${p.port}`;
+    if (!machine) { this.openUrl(`http://localhost:${p.port}`, key, cx); return; }
+    const open = this.tunnels().get(`${machine}:${p.port}`);
+    if (open) { this.openUrl(`http://localhost:${open.local}`, key, cx); return; }
+    const local = this.freeLocalPort(p.port);
+    this.tunnelNotes[key] = "connecting…";
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const started = await hc(["run", "--bg", "--json", "--no-parent", "--no-notify",
+        "--label", `tunnel=${machine}:${p.port}`, "--label", `tunnel_local=${local}`, "--",
+        "timeout", TUNNEL_LIFETIME, "ssh", "-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+        "-o", "ServerAliveInterval=30", "-L", `127.0.0.1:${local}:localhost:${p.port}`,
+        this.sshTargets[machine] ?? machine]).catch((e) => ({ code: 1, stderr: String(e) }));
+      if (started.code !== 0) {
+        this.tunnelNotes[key] = `The tunnel didn't start: ${(started.stderr || "").trim()}`;
+        cx.notify();
+        return;
+      }
+      const address = JSON.parse(started.stdout).address;
+      for (let waited = 0; waited < TUNNEL_WAIT_MS; waited += POLL_MS) {
+        if (await this.listening(local)) {
+          delete this.tunnelNotes[key];
+          this.openUrl(`http://localhost:${local}`, key, cx);
+          cx.notify();
+          return;
+        }
+        await cx.sleep(POLL_MS);
+      }
+      // ssh says why (no key, host unreachable, port taken here) on its screen.
+      const said = (await hc(["read", address]).catch(() => ({ stdout: "" }))).stdout.trim().split("\n").pop();
+      await this.closeTunnel(address);
+      this.tunnelNotes[key] = `The tunnel didn't open${said ? `: ${said}` : ""}. It needs ssh to ${machine} without a password.`;
+      cx.notify();
+    });
+  }
+
+  async closeTunnel(address) {
+    await hc(["kill", address]).catch(() => null);
+    await hc(["rm", address]).catch(() => null);
+  }
+
   goTo(term) {
     if (panes().some((x) => x.terminal === term.address)) run("pane.focus", { terminal: term.address });
     else run("terminal.peek", { terminal: term.address });
@@ -330,16 +428,17 @@ export default class Ports extends View {
 
   machineHeader(t, result, count) {
     const state = result.loading && !result.at ? "reading…" : result.error ?? `${count} ports`;
+    // A band on raised, as the PRs & CI window shows spaces.
     return h_flex()
-      .gap(5)
-      .items_center()
+      .mt(8)
+      .mb(2)
       .px(10)
-      .pt(10)
-      .pb(3)
-      .text_size(10)
-      .text_color(t.dim)
-      .child(div().flex_none().font_semibold().text_color(t.muted).child(machineLabel(result.machine)))
-      .child(div().truncate().text_color(result.error ? t.blocked : t.dim).child(`· ${state}`));
+      .py(4)
+      .gap(6)
+      .items_center()
+      .bg(t.raised ?? t.hover)
+      .child(div().flex_none().font_semibold().text_size(12.5).text_color(t.foreground).child(machineLabel(result.machine)))
+      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(result.error ? t.blocked : t.dim).child(state));
   }
 
   // ":8080  redloop-frontend-1        network   Open  Terminal"
@@ -350,6 +449,7 @@ export default class Ports extends View {
     const detail = p.container ? p.folder ?? "container" : p.folder && p.folder !== "~" ? p.folder : p.command ?? "";
     const where = term ? term.where ?? term.name ?? term.address : null;
     const id = `${machineLabel(machine)}-${p.port}`;
+    const tunnel = machine ? this.tunnels().get(`${machine}:${p.port}`) : null;
     return h_flex()
       .id(`port-${id}`)
       .px(10)
@@ -362,9 +462,16 @@ export default class Ports extends View {
       .child(v_flex().flex_1().min_w(0)
         .child(div().truncate().text_color(p.program || p.container ? t.foreground : t.muted).child(name))
         .when(Boolean(detail || where), (el) => el.child(div().truncate().text_size(10).text_color(t.dim)
-          .child([detail, where ? `started in ${where}` : null].filter(Boolean).join(" · ")))))
+          .child([detail, where ? `started in ${where}` : null].filter(Boolean).join(" · "))))
+        .when(Boolean(tunnel), (el) => el.child(div().truncate().text_size(10).text_color(t.accent)
+          .child(`tunnel → localhost:${tunnel.local} on this computer`))))
       .when(!p.local_only, (el) => el.child(div().flex_none().text_size(10).text_color(t.blocked).child("network")))
-      .when(isWeb(p), (el) => el.child(this.button(t, `open-${id}`, "Open", () => this.openPage(machine, p))))
+      .when(isWeb(p), (el) => el
+        .child(this.button(t, `open-${id}`, "Open", () => this.openPage(machine, p)))
+        .child(this.button(t, `mine-${id}`, "My browser", (_e, cx) => this.myBrowser(machine, p, cx))))
+      .when(Boolean(tunnel), (el) => el.child(this.button(t, `untunnel-${id}`, "Close tunnel", (_e, cx) => {
+        this.closeTunnel(tunnel.address).then(() => cx.notify());
+      })))
       .when(Boolean(term), (el) => el.child(this.button(t, `term-${id}`, "Terminal", () => this.goTo(term))))
       .when(Boolean(p.pid || p.container), (el) => el.child(this.button(t, `stop-${id}`, "Stop", (_e, cx) => {
         this.confirming = this.confirming === id ? null : id;
@@ -378,6 +485,9 @@ export default class Ports extends View {
     const id = `${machineLabel(machine)}-${p.port}`;
     const out = [this.row(t, machine, p)];
     if (this.confirming === id) out.push(this.confirmRow(t, machine, p));
+    const note = this.tunnelNotes[id];
+    if (note) out.push(h_flex().px(10).pl(70).pb(3).text_size(10.5)
+      .text_color(note === "connecting…" ? t.dim : t.blocked).child(div().truncate().child(note)));
     const stop = this.stopState(machine, p);
     if (stop) {
       const line = h_flex().px(10).pl(70).pb(3).gap(8).items_center().text_size(10.5);
@@ -423,6 +533,6 @@ export default class Ports extends View {
           .bg(t.background).text_size(12).text_color(t.foreground)))
       .child(v_flex().id("port-list").flex_1().min_h(0).pb(8).overflow_y_scrollbar().children(sections))
       .child(div().flex_none().px(10).py(5).border_t(1).border_color(t.border).text_size(10).text_color(t.dim)
-        .child("\"network\": reachable from other computers, not only this machine. Open loads it through that machine."));
+        .child("\"network\": reachable from other computers, not only this machine. Open: Herdr's browser, through that machine. My browser: yours, through an ssh tunnel for another machine."));
   }
 }

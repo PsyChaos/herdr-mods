@@ -2,8 +2,9 @@
 
 Which program or container listens on which TCP port, on this computer and on
 every connected Herdr machine. A row opens its page in the [browser](../browser/)
-mod, through that machine, goes to the Herdr terminal that started it, or
-stops what holds the port after you confirm it.
+mod, through that machine, or in your own browser (another machine's port
+through an ssh tunnel), goes to the Herdr terminal that started it, or stops
+what holds the port after you confirm it.
 
 ## What you see
 
@@ -14,8 +15,8 @@ A window, 540×560, that you can drag anywhere:
   ones too" while searching), then "Show all"/"Fewer", "↻" and "✕".
 - A search input, placeholder "Search: 3000, node, redloop, ~/Projects…". It
   has the keyboard as soon as the window opens.
-- A section per machine, "This computer" first: its name in `muted`
-  semibold and "· N ports", "· reading…" or the error in `blocked`.
+- A band per machine on `raised`, "This computer" first: its name in 12.5px
+  semibold and "N ports", "reading…" or the error in `blocked`.
 - A row per port:
   - `:<port>` in semibold, 52px wide;
   - the container name, or the program (`node`, `python3`), or "system" in
@@ -25,8 +26,10 @@ A window, 540×560, that you can drag anywhere:
     a live Herdr terminal started it;
   - "network" in `blocked` when it listens on more than 127.x / ::1, so other
     computers can reach it;
-  - "Open" unless the port never serves a page (ssh, mail, DNS, CUPS,
-    databases, Redis, memcached; containers named like a database);
+  - "Open" and "My browser" unless the port never serves a page (ssh, mail,
+    DNS, CUPS, databases, Redis, memcached; containers named like a database);
+  - in `accent` under the name, "tunnel → localhost:<here> on this computer"
+    and "Close tunnel" while a tunnel to it is open;
   - "Terminal" when its Herdr terminal is known and live;
   - "Stop" when the process is yours (it has a pid) or it is a container.
 - Under a row being stopped: a confirmation box with a `blocked` border,
@@ -57,6 +60,16 @@ A window, 540×560, that you can drag anywhere:
 - "Open" sets shared state `browser.request` to `{url: "localhost:<port>",
   machine, at}` and runs `mod.open browser`. The browser mod opens a request
   younger than 5 seconds at once, loading it through that machine.
+- "My browser" opens `http://localhost:<port>` in your own browser (`xdg-open`
+  or `open`, through `setsid -f`). For another machine it first starts, as a
+  Herdr terminal (`hc run --bg --no-parent --no-notify`, labels
+  `tunnel=<machine>:<port>` and `tunnel_local=<here>`), `timeout 12h ssh -N -o
+  BatchMode=yes -o ExitOnForwardFailure=yes -L 127.0.0.1:<here>:localhost:<port>
+  <target>`. `<here>` is the same number when nothing here uses it, otherwise
+  one above 40000. It waits up to 6 seconds for `<here>` to listen, then opens
+  it; if it doesn't, it shows ssh's last line and ends the terminal. Open
+  tunnels are found again from `terminals()` labels, so they outlast the
+  window; "Close tunnel" runs `hc kill` and `hc rm`.
 - "Stop" on a container runs `docker stop <name>`; on a process, `kill -s TERM
   <pid>`, but only if `ss -ltnpH "sport = :<port>"` still shows that pid (a pid
   can be reused in the seconds since the list was read). Both run on the
@@ -70,13 +83,15 @@ A window, 540×560, that you can drag anywhere:
 ## Built from
 
 - `main.js`: the window; `mod.json`: `place: none`, a window overlay.
-- Herdr: `machines()`, `terminals()`, `panes()`, `exec`, `hc([...])`,
+- Herdr: `machines()`, `terminals()` (with labels), `panes()`, `exec`, `hc([...])`,
   `run("pane.focus" | "terminal.peek" | "mod.open")`, `setShared`,
   `props().overlay`/`closeOverlay`.
 - gpui-base `InputState` + `Input`.
 
 ## Watch out
 
+- `localhost` as the tunnel's far end lets ssh reach servers that listen only
+  on `::1` (Node often does) as well as `127.0.0.1`.
 - `ss` shows the process only for your own user's ports; root's ports have
   no program and count as "system".
 - A port that Docker publishes is held by `docker-proxy` (root), so the
@@ -91,4 +106,6 @@ A window, 540×560, that you can drag anywhere:
 - Ctrl+Shift+Y lists a dev server you started in a Herdr terminal, with
   "started in" and its folder; "Terminal" focuses that terminal.
 - "Open" on a port of another machine opens its page there.
+- "My browser" on another machine's dev server opens it in your browser at
+  `localhost:<port>`, and "Close tunnel" frees that port.
 - Typing `5432` finds a database even though it is hidden by default.
