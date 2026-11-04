@@ -10,11 +10,12 @@
 // reads; nothing is written to GitHub.
 // Notifications come while this window is open (it comes back after a restart
 // until you close it).
+// "Send to an agent" puts a failed run's message in an agent's input, unsent.
 // Runs as a window: ctrl-shift-r ("mod.open:ci").
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { panes, spaces, machines, exec, hc, notify, run, theme, props, closeOverlay, settings, window as hostWindow } from "herdr";
+import { agents, panes, spaces, machines, exec, hc, notify, run, theme, props, closeOverlay, settings, window as hostWindow } from "herdr";
 
 const REFRESH_MS = 60000;
 // While something runs, look more often so the notification comes soon after.
@@ -113,6 +114,9 @@ const LOG_SH = 'out=$(gh run view "$1" --repo "$2" --log-failed 2>&1); code=$?; 
 
 // Detached, so the browser it may start doesn't belong to Herdr's exec.
 const OPEN_SH = 'command -v setsid >/dev/null && exec setsid -f "$0" "$1" >/dev/null 2>&1; exec "$0" "$1" >/dev/null 2>&1 &';
+
+// How long Herdr gets to move focus to the agent's pane before the paste.
+const PASTE_DELAY_MS = 250;
 
 const COPY_SH = 'printf "%s" "$1" | { wl-copy 2>/dev/null || xclip -selection clipboard 2>/dev/null || pbcopy; }';
 
@@ -303,7 +307,8 @@ export default class Ci extends View {
   // Shows the failed steps' log of a run below the list.
   showLog(machine, repo, runId, what, url, cx) {
     if (!runId) { this.openUrl(url, cx); return; }
-    this.log = { machine, repo, runId, what, url, lines: [], loading: true, error: null, copied: false };
+    const space = this.spaceOf(machine, repo);
+    this.log = { machine, repo, space, runId, what, url, lines: [], loading: true, error: null, copied: false, picking: false };
     cx.notify();
     cx.spawn(async (cx) => {
       const argv = ["sh", "-c", LOG_SH, "sh", String(runId), repo];
@@ -322,20 +327,71 @@ export default class Ci extends View {
     });
   }
 
+  // The space a repository of a machine shows under.
+  spaceOf(machine, name) {
+    const repo = (this.results[machineLabel(machine)]?.repos ?? []).find((r) => r.repo === name);
+    return repo ? this.ownerOf(machine, repo) : null;
+  }
+
   // A message for an agent: what failed, where, and the end of its log.
-  copyForAgent(cx) {
-    const log = this.log;
+  message(log) {
     const last = [...log.lines].reverse().find((l) => l.job);
-    const text = [
+    return [
       `CI failed: ${log.what} in ${log.repo}`, log.url,
       last ? `Failed step: ${last.job} / ${last.step}` : null,
-      "", "End of the log:", "", ...log.lines.map((l) => l.text), "",
-      "Find the cause and fix it.",
+      ...(log.lines.length ? ["", "End of the log:", "", ...log.lines.map((l) => l.text)] : [log.error ? `(${log.error})` : null]),
+      "", "Find the cause and fix it.",
     ].filter((l) => l !== null).join("\n");
-    exec("sh", ["-c", COPY_SH, "sh", text]).then((r) => {
-      this.log = this.log === log ? { ...log, copied: r.code === 0 ? "Copied" : "Copy failed" } : this.log;
+  }
+
+  // Puts the message on the clipboard; `then` runs once it is there.
+  copy(log, done, cx, then) {
+    exec("sh", ["-c", COPY_SH, "sh", this.message(log)]).then((r) => {
+      if (r.code === 0 && then) then();
+      if (this.log === log || this.log?.runId === log.runId) this.log = { ...this.log, copied: r.code === 0 ? done : "Copy failed", picking: false };
       cx.notify();
     }).catch(() => null);
+  }
+
+  copyForAgent(cx) {
+    this.copy(this.log, "Copied", cx);
+  }
+
+  // Agents to offer: the repository's space first, then the rest.
+  candidates(log) {
+    const all = agents();
+    return [...all.filter((a) => a.space === log.space), ...all.filter((a) => a.space !== log.space)];
+  }
+
+  // Into the agent's input, not sent: focus its pane and paste the clipboard.
+  sendTo(agent, cx) {
+    const name = `${agent.program?.name ?? "agent"} in ${agent.space_name}`;
+    this.copy(this.log, `In ${name}'s input; press Enter there`, cx, () => {
+      run("pane.focus", { pane: agent.pane });
+      cx.timer.after(PASTE_DELAY_MS, () => run("terminal.paste"));
+    });
+  }
+
+  // One agent in the repository's space gets it at once; otherwise pick.
+  sendToAgent(cx) {
+    const log = this.log;
+    const here = agents().filter((a) => a.space === log.space);
+    if (here.length === 1) { this.sendTo(here[0], cx); return; }
+    this.log = { ...log, picking: !log.picking };
+    cx.notify();
+  }
+
+  agentPicker(t) {
+    const list = this.candidates(this.log);
+    if (!list.length) return div().px(10).py(4).text_size(10.5).text_color(t.dim).child("No agents are running.");
+    return v_flex().flex_none().max_h(130).id("agent-pick").overflow_y_scrollbar().px(6).pb(4)
+      .children(list.map((a) => h_flex().id(`agent-${a.address}`).px(6).py(2).gap(8).items_center().rounded(5)
+        .cursor_pointer().text_size(11).hover((s) => s.bg(t.hover))
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click((_e, cx) => this.sendTo(a, cx))
+        .child(div().flex_none().text_color(t.foreground).child(a.program?.name ?? "agent"))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`${a.space_name} / ${a.tab_name} · ${a.title || a.status}`))
+        .child(div().flex_none().text_size(10).text_color(a.space === this.log.space ? t.accent : t.dim).child(a.space === this.log.space ? "this space" : a.status))));
   }
 
   button(t, id, label, onClick) {
@@ -506,9 +562,13 @@ export default class Ci extends View {
         .child(div().flex_none().font_semibold().text_color(t.foreground).child("Log"))
         .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim)
           .child([log.what, last ? `${last.job} / ${last.step}` : null].filter(Boolean).join(" · ")))
-        .when(log.lines.length > 0, (el) => el.child(this.button(t, "copy", log.copied || "Copy for an agent", (_e, cx) => this.copyForAgent(cx))))
+        .when(Boolean(log.copied), (el) => el.child(div().flex_none().text_size(10).text_color(t.accent).child(log.copied)))
+        .when(!log.loading, (el) => el
+          .child(this.button(t, "send", log.picking ? "Send to… ▴" : "Send to an agent", (_e, cx) => this.sendToAgent(cx)))
+          .child(this.button(t, "copy", "Copy", (_e, cx) => this.copyForAgent(cx))))
         .child(this.button(t, "log-web", "GitHub", (_e, cx) => this.openUrl(log.url, cx)))
         .child(this.button(t, "log-close", "✕", (_e, cx) => { this.log = null; cx.notify(); })))
+      .when(log.picking, (el) => el.child(this.agentPicker(t)))
       .child(v_flex().id("log-lines").flex_1().min_h(0).px(10).pb(6).overflow_y_scrollbar()
         .font_family(font).text_size(10.5).text_color(t.muted)
         .when(log.loading, (el) => el.child(div().text_color(t.dim).child("reading the log…")))

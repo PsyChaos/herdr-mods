@@ -28,8 +28,10 @@ A window, 620×640, that you can drag anywhere:
 - Bot PRs (Dependabot, Renovate) fold into one "▸ 13 bot PRs (dependabot) · 13
   failing" line per repository; a click unfolds them.
 - The log panel, 250px, under the list: "Log", the PR or workflow and the
-  failed job / step, "Copy for an agent", "GitHub", "✕", and the last 60 lines
-  in the terminal font, error lines in `blocked`.
+  failed job / step, what the last button did in `accent`, "Send to an agent",
+  "Copy", "GitHub", "✕", and the last 60 lines in the terminal font, error
+  lines in `blocked`. "Send to an agent" with several agents opens a list of
+  them under the bar, the repository's space first ("this space" in `accent`).
 - A footer line: grouped by space, how many repositories have nothing open.
 
 ## How it behaves
@@ -54,9 +56,14 @@ A window, 620×640, that you can drag anywhere:
 - "Log" runs `gh run view <id> --repo <repo> --log-failed` on that machine,
   drops timestamps and colours, and keeps the last 60 lines. An expired log
   (HTTP 410) says so.
-- "Copy for an agent" copies what failed, the URL, the failed step and the log
-  lines, ending with "Find the cause and fix it.", with `wl-copy`, `xclip` or
-  `pbcopy`.
+- "Copy" copies a message for an agent: what failed, the URL, the failed step
+  and the log lines (or why there is no log), ending with "Find the cause and
+  fix it.", with `wl-copy`, `xclip` or `pbcopy`.
+- "Send to an agent" puts that message in an agent's input without sending it.
+  With one agent (`agents()`) in the repository's space it goes there; with more
+  you pick one. It copies the message, runs `pane.focus {pane}` on the agent,
+  then `terminal.paste` 250 ms later. Enter stays yours. `hc send` can't do
+  this: it always presses Enter.
 - "Open" and "GitHub" open the page in your own browser (`xdg-open`, `open`
   on macOS), started with `setsid -f` so it doesn't hang on Herdr's `exec`.
   Your browser has your GitHub login, which private repositories need.
@@ -68,8 +75,8 @@ A window, 620×640, that you can drag anywhere:
 ## Built from
 
 - `main.js`: the window; `mod.json`: `place: none`, a window overlay.
-- Herdr: `spaces()`, `panes()`, `machines()`, `exec`, `hc([...])`, `notify`,
-  `run("space.select")`, `settings().font_family`, `window().platform`,
+- Herdr: `spaces()`, `panes()`, `agents()`, `machines()`, `exec`, `hc([...])`,
+  `notify`, `run("space.select" | "pane.focus" | "terminal.paste")`, `settings().font_family`, `window().platform`,
   `props().overlay`/`closeOverlay`.
 - gpui-base `InputState` + `Input`.
 
@@ -90,5 +97,5 @@ A window, 620×640, that you can drag anywhere:
 - Ctrl+Shift+R lists each space with its repositories' open PRs and checks.
 - Pushing to a PR branch while the window is open gives a notification when
   its checks finish.
-- "Log" on a failed PR shows the failed step's last lines; "Copy for an agent"
-  puts them on the clipboard.
+- "Log" on a failed PR shows the failed step's last lines; "Send to an agent"
+  leaves the message in that space's agent's input, unsent.
