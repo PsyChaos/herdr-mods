@@ -9,6 +9,7 @@ agents at once.
 | [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
 | [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, or jump to its terminal. |
+| [`ci`](ci/) | **PRs & CI.** The open pull requests and CI runs of every repository in your spaces, on every Herdr machine, grouped by space. Notifies when a run finishes and shows a failed step's log, ready to copy to an agent. |
 
 <p>
   <img src="task-board/preview.png" alt="Task board" width="258">
@@ -20,11 +21,12 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci ~/.config/herdr-app/mods/
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
 herdr-app check ~/.config/herdr-app/mods/browser
 herdr-app check ~/.config/herdr-app/mods/ports
+herdr-app check ~/.config/herdr-app/mods/ci
 ```
 
 The browser mod also needs [terminal-browser](https://github.com/zenbu-labs/terminal-browser)
@@ -42,13 +44,14 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
   "ctrl-shift-g": "mod.open:task-board",
   "ctrl-shift-j": "mod.open:usage-board",
   "ctrl-shift-u": "mod.open:browser",
-  "ctrl-shift-y": "mod.open:ports"
+  "ctrl-shift-y": "mod.open:ports",
+  "ctrl-shift-r": "mod.open:ci"
 }
 ```
 
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
-asks for an address to open, and `Ctrl+Shift+Y` lists the ports.
+asks for an address to open, `Ctrl+Shift+Y` lists the ports, and `Ctrl+Shift+R` shows PRs and CI.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
 repository. Each folder has a `RECIPE.md` it can follow.
@@ -132,6 +135,17 @@ opens the first match in the browser.
 "Terminal" goes to the Herdr terminal the program was started in. "network"
 marks a port other computers can reach, not only its own machine.
 
+## Using the PRs & CI panel
+
+`Ctrl+Shift+R` lists, under each space, the open PRs of the repositories its
+terminals are in, with their checks, and the latest CI runs of the branch you
+have checked out. Type to search (`vensift fail`, `#64`, `dependabot`). Keep the
+window open somewhere and it notifies you when a run finishes. "Log" on a
+failed PR shows the failed step's end; "Copy for an agent" puts it on the
+clipboard with the link, ready to paste to an agent. "Open" opens the PR in
+your own browser. It needs [`gh`](https://cli.github.com) logged in on each
+machine.
+
 ## Adding a provider to the usage panel
 
 Put a script in `usage-board/sources/<provider>.sh` that prints one line of
@@ -160,6 +174,14 @@ Both need `python3`.
   connected Herdr machine (sent with `hc exec`, nothing is installed). It only
   reads: `ss -ltnp`, `docker ps`, and `/proc` for your own processes' command,
   folder and Herdr terminal. No network access. It needs `python3`.
+
+- **ci** runs a Python script every minute (every 20 seconds while CI runs),
+  here and on each connected Herdr machine (sent with `hc exec`, nothing is
+  installed). It reads `git` in your spaces' folders and calls that machine's
+  `gh` (`gh pr list`, `gh run list`, and `gh run view --log-failed` when you
+  ask for a log), so it uses that machine's GitHub login and API limits. It
+  never writes to GitHub. "Open" runs `xdg-open` (`open` on macOS); "Copy for
+  an agent" runs `wl-copy`, `xclip` or `pbcopy`.
 
 - **browser** runs `terminal-browser` on this computer when you open a page,
   with its usage statistics turned off (`DO_NOT_TRACK=1`). For another
