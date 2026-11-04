@@ -9,6 +9,8 @@ agents at once.
 | [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
 | [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
+| [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and their Docker containers by project, with logs, start, stop and restart. |
+| [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these panels and any mod you gave a key, with their keys. |
 | [`ci`](ci/) | **PRs & CI.** The open pull requests and CI runs of every repository in your spaces, on every Herdr machine, grouped by space. Notifies when a run finishes and shows a failed step's log, ready to copy to an agent. |
 
 <p>
@@ -21,12 +23,15 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci herdr-mods/machines herdr-mods/palette-plus ~/.config/herdr-app/mods/
+~/.config/herdr-app/mods/palette-plus/sync.sh
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
 herdr-app check ~/.config/herdr-app/mods/browser
 herdr-app check ~/.config/herdr-app/mods/ports
 herdr-app check ~/.config/herdr-app/mods/ci
+herdr-app check ~/.config/herdr-app/mods/machines
+herdr-app check ~/.config/herdr-app/mods/palette-plus
 ```
 
 The browser mod also needs [terminal-browser](https://github.com/zenbu-labs/terminal-browser)
@@ -45,13 +50,17 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
   "ctrl-shift-j": "mod.open:usage-board",
   "ctrl-shift-u": "mod.open:browser",
   "ctrl-shift-y": "mod.open:ports",
-  "ctrl-shift-r": "mod.open:ci"
+  "ctrl-shift-r": "mod.open:ci",
+  "ctrl-shift-m": "mod.open:machines",
+  "ctrl-shift-p": "mod.open:palette-plus"
 }
 ```
 
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
-asks for an address to open, `Ctrl+Shift+Y` lists the ports, and `Ctrl+Shift+R` shows PRs and CI.
+asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+R` shows PRs and CI, and
+`Ctrl+Shift+M` the machines. `Ctrl+Shift+P` replaces Herdr's palette with one
+that lists all of these.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
 repository. Each folder has a `RECIPE.md` it can follow.
@@ -131,7 +140,10 @@ ones programs picked for themselves. Type to search all of them by port,
 program, container, folder or machine (`3000`, `node miloobi`, `5432`); Enter
 opens the first match in the browser.
 
-"Open" loads the page with the browser mod, through the port's machine.
+"Open" loads the page with the browser mod, through the port's machine. "My
+browser" opens it in your own browser; a port on another machine gets an ssh
+tunnel to the same port here first (or one above 40000 when that is taken),
+shown under the row with "Close tunnel".
 "Terminal" goes to the Herdr terminal the program was started in. "Stop"
 ends the program or container behind a port, after a confirmation that says
 what else stops with it; "Force stop" is offered only when it doesn't stop. "network"
@@ -143,10 +155,18 @@ marks a port other computers can reach, not only its own machine.
 terminals are in, with their checks, and the latest CI runs of the branch you
 have checked out. Type to search (`vensift fail`, `#64`, `dependabot`). Keep the
 window open somewhere and it notifies you when a run finishes. "Log" on a
-failed PR shows the failed step's end; "Copy for an agent" puts it on the
-clipboard with the link, ready to paste to an agent. "Open" opens the PR in
+failed PR shows the failed step's end; "Send to an agent" leaves it, with the
+link, in the input of that space's agent, unsent: you read it and press Enter.
+"Copy" puts the same message on the clipboard. "Open" opens the PR in
 your own browser. It needs [`gh`](https://cli.github.com) logged in on each
 machine.
+
+## Using the machines panel
+
+`Ctrl+Shift+M` shows how full each machine's CPU, memory, swap and disks are,
+what is busiest right now, and its Docker containers by compose project. A
+project with an unhealthy, crashed or restarting container opens by itself in
+red. "Logs" shows a container's last lines; "Stop" and "Restart" ask first.
 
 ## Adding a provider to the usage panel
 
@@ -175,9 +195,10 @@ Both need `python3`.
 - **ports** runs a short Python script every 10 seconds, here and on each
   connected Herdr machine (sent with `hc exec`, nothing is installed). It
   reads `ss -ltnp`, `docker ps`, and `/proc` for your own processes' command,
-  folder and Herdr terminal. No network access. It needs `python3`. Only
-  "Stop", after you confirm, changes anything: `kill` or `docker stop` on that
-  machine.
+  folder and Herdr terminal. It needs `python3`. Only "Stop", after you
+  confirm, changes anything: `kill` or `docker stop` on that machine. "My
+  browser" for another machine starts `ssh -N -L` to it as a Herdr terminal
+  (ending after 12 hours at the latest) and opens your browser.
 
 - **ci** runs a Python script every minute (every 20 seconds while CI runs),
   here and on each connected Herdr machine (sent with `hc exec`, nothing is
@@ -186,6 +207,15 @@ Both need `python3`.
   ask for a log), so it uses that machine's GitHub login and API limits. It
   never writes to GitHub. "Open" runs `xdg-open` (`open` on macOS); "Copy for
   an agent" runs `wl-copy`, `xclip` or `pbcopy`.
+
+- **machines** runs a Python script every 10 seconds, here and on each
+  connected Herdr machine (sent with `hc exec`). It reads `/proc`, `statvfs`,
+  `docker ps -a` and `docker stats`. No network access. Only "Start", "Stop"
+  and "Restart" (the last two after you confirm) change anything: `docker
+  start|stop|restart` on that machine.
+
+- **palette-plus** copies Herdr's own palette next to itself with `sync.sh`
+  when Herdr's changes, and only opens mods.
 
 - **browser** runs `terminal-browser` on this computer when you open a page,
   with its usage statistics turned off (`DO_NOT_TRACK=1`). For another
