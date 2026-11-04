@@ -18,6 +18,7 @@ const KNOWN = {
   machines: ["Machines", "cpu memory ram disk docker containers load"],
   browser: ["Open in browser", "web page url file html localhost"],
   "task-board": ["Task board", "tasks helpers agents"],
+  attach: ["Add files to an agent", "attach image picture screenshot file upload drop paste"],
   "usage-board": ["Usage", "limits tokens claude codex opencode quota"],
 };
 // The "Mods" group comes right after "Recent".

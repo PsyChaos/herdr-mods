@@ -10,6 +10,7 @@ agents at once.
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
 | [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
 | [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and their Docker containers by project, with logs, start, stop and restart. |
+| [`attach`](attach/) | **Add files.** Pick files, or drop them on its window, and they go into an agent's input as paths: images arrive attached like a pasted one. For an agent on another machine the files are sent there first. |
 | [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these panels and any mod you gave a key, with their keys. |
 | [`ci`](ci/) | **PRs & CI.** The open pull requests and CI runs of every repository in your spaces, on every Herdr machine, grouped by space. Notifies when a run finishes and shows a failed step's log, ready to copy to an agent. |
 
@@ -23,7 +24,7 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci herdr-mods/machines herdr-mods/palette-plus ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/palette-plus ~/.config/herdr-app/mods/
 ~/.config/herdr-app/mods/palette-plus/sync.sh
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
@@ -31,6 +32,7 @@ herdr-app check ~/.config/herdr-app/mods/browser
 herdr-app check ~/.config/herdr-app/mods/ports
 herdr-app check ~/.config/herdr-app/mods/ci
 herdr-app check ~/.config/herdr-app/mods/machines
+herdr-app check ~/.config/herdr-app/mods/attach
 herdr-app check ~/.config/herdr-app/mods/palette-plus
 ```
 
@@ -52,6 +54,7 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
   "ctrl-shift-y": "mod.open:ports",
   "ctrl-shift-r": "mod.open:ci",
   "ctrl-shift-m": "mod.open:machines",
+  "ctrl-shift-a": "mod.open:attach",
   "ctrl-shift-p": "mod.open:palette-plus"
 }
 ```
@@ -59,7 +62,7 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
 asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+R` shows PRs and CI, and
-`Ctrl+Shift+M` the machines. `Ctrl+Shift+P` replaces Herdr's palette with one
+`Ctrl+Shift+M` the machines, and `Ctrl+Shift+A` adds files to an agent. `Ctrl+Shift+P` replaces Herdr's palette with one
 that lists all of these.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
@@ -168,6 +171,15 @@ what is busiest right now, and its Docker containers by compose project. A
 project with an unhealthy, crashed or restarting container opens by itself in
 red. "Logs" shows a container's last lines; "Stop" and "Restart" ask first.
 
+## Adding files to an agent
+
+`Ctrl+Shift+A` opens a small window. Pick the agent (the one you were in is
+chosen), press "Choose…" or drop files from your file manager on the window,
+then "Add to …". Each file's path is pasted into the agent's input, unsent:
+Claude Code and Codex show a pasted image path as an attached image
+(`[Image #1]`) and read other files from their path. Write your message and
+press Enter yourself. "Choose…" needs `zenity`; dropping works without it.
+
 ## Adding a provider to the usage panel
 
 Put a script in `usage-board/sources/<provider>.sh` that prints one line of
@@ -213,6 +225,12 @@ Both need `python3`.
   `docker ps -a` and `docker stats`. No network access. Only "Start", "Stop"
   and "Restart" (the last two after you confirm) change anything: `docker
   start|stop|restart` on that machine.
+
+- **attach** runs `zenity` for "Choose…", and `hc put` to copy a file next
+  to an agent on another machine (or a local file whose name has spaces or
+  quotes, so it gets a plain name). It pastes through the clipboard
+  (`wl-copy`, `xclip` or `pbcopy`) and, with `wl-paste`, saves the clipboard
+  first and puts it back. No network access beyond Herdr's own connection.
 
 - **palette-plus** copies Herdr's own palette next to itself with `sync.sh`
   when Herdr's changes, and only opens mods.
