@@ -298,10 +298,12 @@ export default class Ci extends View {
 
   openUrl(url, cx) {
     const opener = hostWindow()?.platform === "macos" ? "open" : "xdg-open";
-    exec("sh", ["-c", OPEN_SH, opener, url])
-      .then((r) => { this.note = r.code === 0 ? null : `Couldn't open ${url}: ${(r.stderr || "").trim() || `exit ${r.code}`}`; })
-      .catch((e) => { this.note = `Couldn't open ${url}: ${String(e?.message ?? e)}`; })
-      .finally(() => cx?.notify());
+    // A promise callback has no cx of its own: async work runs in cx.spawn.
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", OPEN_SH, opener, url]).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
+      this.note = r.code === 0 ? null : `Couldn't open ${url}: ${(r.stderr || "").trim() || `exit ${r.code}`}`;
+      cx.notify();
+    });
   }
 
   // Shows the failed steps' log of a run below the list.
@@ -346,11 +348,13 @@ export default class Ci extends View {
 
   // Puts the message on the clipboard; `then` runs once it is there.
   copy(log, done, cx, then) {
-    exec("sh", ["-c", COPY_SH, "sh", this.message(log)]).then((r) => {
-      if (r.code === 0 && then) then();
+    const text = this.message(log);
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", COPY_SH, "sh", text]).catch(() => ({ code: 1 }));
+      if (r.code === 0 && then) await then(cx);
       if (this.log === log || this.log?.runId === log.runId) this.log = { ...this.log, copied: r.code === 0 ? done : "Copy failed", picking: false };
       cx.notify();
-    }).catch(() => null);
+    });
   }
 
   copyForAgent(cx) {
@@ -366,9 +370,10 @@ export default class Ci extends View {
   // Into the agent's input, not sent: focus its pane and paste the clipboard.
   sendTo(agent, cx) {
     const name = `${agent.program?.name ?? "agent"} in ${agent.space_name}`;
-    this.copy(this.log, `In ${name}'s input; press Enter there`, cx, () => {
+    this.copy(this.log, `In ${name}'s input; press Enter there`, cx, async (cx) => {
       run("pane.focus", { pane: agent.pane });
-      cx.timer.after(PASTE_DELAY_MS, () => run("terminal.paste"));
+      await cx.sleep(PASTE_DELAY_MS);
+      run("terminal.paste");
     });
   }
 

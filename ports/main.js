@@ -320,9 +320,11 @@ export default class Ports extends View {
 
   openUrl(url, key, cx) {
     const opener = hostWindow()?.platform === "macos" ? "open" : "xdg-open";
-    exec("sh", ["-c", OPEN_SH, opener, url]).then((r) => {
+    // A promise callback has no cx of its own: async work runs in cx.spawn.
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", OPEN_SH, opener, url]).catch((e) => ({ code: 1, stderr: String(e) }));
       if (r.code !== 0) { this.tunnelNotes[key] = `Couldn't open ${url}: ${(r.stderr || "").trim() || `exit ${r.code}`}`; cx.notify(); }
-    }).catch(() => null);
+    });
   }
 
   // A port here for the tunnel: the same number when it is free, else one above 40000.
@@ -470,7 +472,7 @@ export default class Ports extends View {
         .child(this.button(t, `open-${id}`, "Open", () => this.openPage(machine, p)))
         .child(this.button(t, `mine-${id}`, "My browser", (_e, cx) => this.myBrowser(machine, p, cx))))
       .when(Boolean(tunnel), (el) => el.child(this.button(t, `untunnel-${id}`, "Close tunnel", (_e, cx) => {
-        this.closeTunnel(tunnel.address).then(() => cx.notify());
+        cx.spawn(async (cx) => { await this.closeTunnel(tunnel.address); cx.notify(); });
       })))
       .when(Boolean(term), (el) => el.child(this.button(t, `term-${id}`, "Terminal", () => this.goTo(term))))
       .when(Boolean(p.pid || p.container), (el) => el.child(this.button(t, `stop-${id}`, "Stop", (_e, cx) => {
