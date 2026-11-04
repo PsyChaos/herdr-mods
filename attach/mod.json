@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Add files",
+  "overlay": { "kind": "window", "key": "attach", "width": 480, "height": 460 }
+}
