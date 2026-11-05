@@ -14,6 +14,7 @@ const SELF = "palette-plus";
 // Shown even without a key; [title, search words].
 const KNOWN = {
   ports: ["Ports", "listening port kill stop tunnel localhost server"],
+  docker: ["Docker", "containers compose logs shell start stop restart images"],
   ci: ["PRs & CI", "pull request github actions checks build failed"],
   machines: ["Machines", "cpu memory ram disk docker containers load"],
   browser: ["Open in browser", "web page url file html localhost"],

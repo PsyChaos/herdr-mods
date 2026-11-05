@@ -9,7 +9,8 @@ agents at once.
 | [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code and Codex included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
 | [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
-| [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and their Docker containers by project, with logs, start, stop and restart. |
+| [`docker`](docker/) | **Docker.** The containers of every Herdr machine in one list, by compose project. Search them, show only running or stopped ones, start, stop and restart them, and open their live logs or a shell in them as a terminal. |
+| [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and how many Docker containers run there, with a link to the Docker panel. |
 | [`attach`](attach/) | **Add files.** Pick files, or drop them on its window, and they go into an agent's input as paths: images arrive attached like a pasted one. For an agent on another machine the files are sent there first. |
 | [`team`](team/) | **Agent team.** Agents in one repository, on one branch or in different worktrees, message each other with the `herdr-team` command. The window shows who works where, the files each worktree changed, clashes, and what the agents said; "Introduce" tells them about each other. |
 | [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these panels and any mod you gave a key, with their keys. |
@@ -25,12 +26,13 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/team herdr-mods/palette-plus ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/docker herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/team herdr-mods/palette-plus ~/.config/herdr-app/mods/
 ~/.config/herdr-app/mods/palette-plus/sync.sh
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
 herdr-app check ~/.config/herdr-app/mods/browser
 herdr-app check ~/.config/herdr-app/mods/ports
+herdr-app check ~/.config/herdr-app/mods/docker
 herdr-app check ~/.config/herdr-app/mods/ci
 herdr-app check ~/.config/herdr-app/mods/machines
 herdr-app check ~/.config/herdr-app/mods/attach
@@ -55,6 +57,7 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
   "ctrl-shift-j": "mod.open:usage-board",
   "ctrl-shift-u": "mod.open:browser",
   "ctrl-shift-y": "mod.open:ports",
+  "ctrl-shift-s": "mod.open:docker",
   "ctrl-shift-r": "mod.open:ci",
   "ctrl-shift-m": "mod.open:machines",
   "ctrl-shift-a": "mod.open:attach",
@@ -65,7 +68,7 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
 
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
-asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+R` shows PRs and CI, and
+asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+S` the Docker containers, `Ctrl+Shift+R` shows PRs and CI, and
 `Ctrl+Shift+M` the machines, `Ctrl+Shift+A` adds files to an agent, and `Ctrl+Shift+D` shows your agents by repository. `Ctrl+Shift+P` replaces Herdr's palette with one
 that lists all of these.
 
@@ -156,6 +159,18 @@ ends the program or container behind a port, after a confirmation that says
 what else stops with it; "Force stop" is offered only when it doesn't stop. "network"
 marks a port other computers can reach, not only its own machine.
 
+## Using the Docker panel
+
+`Ctrl+Shift+S` lists the containers of this computer and every connected
+machine, by compose project. Type to search by machine, project, folder, name,
+image or port (`postgres`, `redloop 192.168`, `:8080`); "All", "Running" and
+"Stopped" narrow it further and show how many there are of each.
+
+"Logs" opens `docker logs -f` as a terminal on the container's machine, in a
+pane beside the one you were in; "Shell" opens `bash` (or `sh`) inside a
+running container the same way. Clicking again goes to the same terminal.
+"Start" starts a stopped container; "Stop" and "Restart" ask first.
+
 ## Using the PRs & CI panel
 
 `Ctrl+Shift+R` lists, under each space, the open PRs of the repositories its
@@ -172,9 +187,9 @@ machine.
 ## Using the machines panel
 
 `Ctrl+Shift+M` shows how full each machine's CPU, memory, swap and disks are,
-what is busiest right now, and its Docker containers by compose project. A
-project with an unhealthy, crashed or restarting container opens by itself in
-red. "Logs" shows a container's last lines; "Stop" and "Restart" ask first.
+what is busiest right now, and how many of its Docker containers run (in red
+when one is unhealthy, crashed or restarting). "Open in Docker" opens the
+Docker panel searching for that machine.
 
 ## Adding files to an agent
 
@@ -263,6 +278,12 @@ Both need `python3`.
   browser" for another machine starts `ssh -N -L` to it as a Herdr terminal
   (ending after 12 hours at the latest) and opens your browser.
 
+- **docker** runs a short Python script every 10 seconds while its window is
+  open, here and on each connected machine (`hc exec`): `docker ps -a` and
+  `docker stats --no-stream`. Start, Stop and Restart run `docker start|stop|
+  restart` on that machine; Logs and Shell start `docker logs -f` or `docker
+  exec -it` there as a labelled Herdr terminal (`hc run --bg`).
+
 - **ci** runs a Python script every minute (every 20 seconds while CI runs),
   from an invisible 2×2 px window that stays open after you first open the
   panel (the open panel runs its own as well), here and on each
@@ -274,10 +295,8 @@ Both need `python3`.
   an agent" runs `wl-copy`, `xclip` or `pbcopy`.
 
 - **machines** runs a Python script every 10 seconds, here and on each
-  connected Herdr machine (sent with `hc exec`). It reads `/proc`, `statvfs`,
-  `docker ps -a` and `docker stats`. No network access. Only "Start", "Stop"
-  and "Restart" (the last two after you confirm) change anything: `docker
-  start|stop|restart` on that machine.
+  connected Herdr machine (sent with `hc exec`). It reads `/proc`, `statvfs`
+  and `docker ps -a`. No network access, and it changes nothing.
 
 - **attach** runs `zenity` for "Choose…", and `hc put` to copy a file next
   to an agent on another machine (or a local file whose name has spaces or

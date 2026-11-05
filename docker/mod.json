@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Docker",
+  "overlay": { "kind": "window", "key": "docker", "width": 620, "height": 640 }
+}

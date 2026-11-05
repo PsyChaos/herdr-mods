@@ -1,19 +1,24 @@
 // Machines: how busy this computer and every connected Herdr machine are (CPU,
-// memory, swap, disks, the busiest processes) and their Docker containers by
-// compose project, with logs, start, stop and restart.
+// memory, swap, disks, the busiest processes) and how many Docker containers
+// run there. The containers themselves are the docker mod's: "Open in Docker"
+// opens it searching for that machine.
 //
 // Each machine runs one Python script (PROBE) every 10 seconds: /proc for CPU
 // (two samples half a second apart), memory and per-process CPU, statvfs for
-// disks, then `docker ps -a` and `docker stats --no-stream` (after the CPU
-// sample, since docker stats keeps dockerd busy). Stop and restart ask first.
+// disks, then `docker ps -a` for the container counts.
 // Runs as a window: ctrl-shift-m ("mod.open:machines").
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, exec, hc, theme, props, closeOverlay, settings } from "herdr";
+import { machines, exec, hc, theme, props, closeOverlay, openOverlay, setShared } from "herdr";
 
 const REFRESH_MS = 10000;
-const LOG_LINES = 120;
+// Read by the docker mod when it opens (see docker/main.js).
+const DOCKER_REQUEST = "docker.request";
+// The docker mod's window as its mod.json describes it. openOverlay, not
+// mod.open: mod.open toggles, so it would close a Docker window already open;
+// opening the same key replaces it in its place.
+const DOCKER_WINDOW = { mod: "docker", kind: "window", key: "docker", width: 620, height: 640 };
 const WARN_PERCENT = 75;
 const FULL_PERCENT = 90;
 const GB = 1024 ** 3;
@@ -75,28 +80,12 @@ def disks():
         out.append({"path": "~" if path == HOME else path, "total": total, "used": total - free})
     return out
 
-docker = {"containers": None, "stats": {}}
-
-def docker_list():
-    fmt = '{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Image}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}'
-    code, out, _ = run(["docker", "ps", "-a", "--format", fmt])
+# Container states only: no docker stats, which keeps dockerd busy.
+def docker_states():
+    code, out, _ = run(["docker", "ps", "-a", "--format", "{{.State}}\t{{.Status}}"])
     if code != 0:
-        return
-    rows = []
-    for line in out.splitlines():
-        name, state, status, image, project, folder = (line.split("\t") + [""] * 6)[:6]
-        if folder.startswith(HOME):
-            folder = "~" + folder[len(HOME):]
-        rows.append({"name": name, "state": state, "status": status, "image": image, "project": project or None, "folder": folder or None})
-    docker["containers"] = rows
-    code, out, _ = run(["docker", "stats", "--no-stream", "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"], timeout=10)
-    if code == 0:
-        for line in out.splitlines():
-            name, cpu, mem = (line.split("\t") + ["", ""])[:3]
-            try:
-                docker["stats"][name] = {"cpu": float(cpu.rstrip("%") or 0), "mem": mem.split(" / ")[0]}
-            except ValueError:
-                pass
+        return None
+    return [dict(zip(("state", "status"), (line.split("\t") + [""])[:2])) for line in out.splitlines()]
 
 t0, i0 = cpu_times()
 p0 = proc_ticks()
@@ -126,8 +115,6 @@ for p in top[:6]:
         pass
 
 mem = meminfo()
-# After the CPU sample: docker stats itself keeps dockerd busy.
-docker_list()
 print(json.dumps({
     "cpu": round(100 * (1 - (i1 - i0) / max(1, t1 - t0)), 1),
     "cores": cores,
@@ -137,8 +124,7 @@ print(json.dumps({
     "swap": {"total": mem.get("SwapTotal", 0), "used": mem.get("SwapTotal", 0) - mem.get("SwapFree", 0)},
     "disks": disks(),
     "top": top[:6],
-    "docker": docker["containers"],
-    "stats": docker["stats"],
+    "docker": docker_states(),
 }))
 `;
 
@@ -171,10 +157,6 @@ function containerState(c) {
 export default class Machines extends View {
   init(_props, cx) {
     this.results = {};
-    this.open = new Set();
-    this.confirming = null;
-    this.notes = {};
-    this.logs = null;
     this.handle = cx.focus_handle();
     this.refresh(cx);
     cx.timer.every(REFRESH_MS, (cx) => this.refresh(cx));
@@ -213,45 +195,13 @@ export default class Machines extends View {
     cx.notify();
   }
 
-  // docker start / stop / restart <name> on the container's machine.
-  docker(machine, c, action, cx) {
-    const key = `${machineLabel(machine)}|${c.name}`;
-    this.confirming = null;
-    this.notes[key] = { text: `${action}ing…`, error: false };
-    cx.notify();
-    cx.spawn(async (cx) => {
-      const r = await this.run(machine, ["docker", action, c.name]);
-      if (r.code === 0) delete this.notes[key];
-      else this.notes[key] = { text: `${action} failed: ${(r.stderr || "").trim().split("\n").pop()}`, error: true };
-      this.refresh(cx);
-    });
-  }
-
-  showLogs(machine, c, cx) {
-    this.logs = { machine, name: c.name, lines: [], loading: true, error: null };
-    cx.notify();
-    cx.spawn(async (cx) => {
-      const r = await this.run(machine, ["sh", "-c", 'docker logs --tail "$1" "$2" 2>&1', "sh", String(LOG_LINES), c.name]);
-      if (this.logs?.name !== c.name || this.logs?.machine !== machine) return;
-      const lines = (r.stdout ?? "").replace(/\x1b\[[0-9;]*m/g, "").split("\n");
-      while (lines.length && !lines[lines.length - 1]) lines.pop();
-      this.logs = { ...this.logs, loading: false, lines,
-        error: r.code !== 0 ? (lines.pop() || "docker couldn't read the logs.") : lines.length ? null : "No log output." };
-      cx.notify();
-    });
-  }
-
   colorOf(t, pct) {
     if (pct >= FULL_PERCENT) return t.blocked;
     if (pct >= WARN_PERCENT) return t.ansi3 ?? t.working;
     return t.accent;
   }
 
-  stateColor(t, state) {
-    return { running: t.ansi2 ?? t.done, starting: t.ansi3, restarting: t.ansi3, unhealthy: t.blocked, failed: t.blocked, paused: t.ansi3 }[state] ?? t.dim;
-  }
-
-  button(t, id, label, onClick, danger) {
+  button(t, id, label, onClick) {
     return div()
       .id(id)
       .px(6)
@@ -259,9 +209,9 @@ export default class Machines extends View {
       .rounded(5)
       .flex_none()
       .text_size(11)
-      .text_color(danger ? t.blocked : t.muted)
+      .text_color(t.muted)
       .cursor_pointer()
-      .hover((s) => s.bg(t.hover).text_color(danger ? t.blocked : t.foreground))
+      .hover((s) => s.bg(t.hover).text_color(t.foreground))
       // A press that isn't stopped drags the window.
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click(onClick)
@@ -297,7 +247,7 @@ export default class Machines extends View {
       .border_b(1)
       .border_color(t.border)
       .child(div().flex_none().font_semibold().text_color(t.foreground).child("Machines"))
-      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim).child("load, memory, disks and containers · every 10 s"))
+      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim).child("load, memory, disks · every 10 s"))
       .child(this.button(t, "refresh", "↻", (_e, cx) => this.refresh(cx)))
       .when(Boolean(overlay), (el) => el.child(this.button(t, "close", "✕", () => closeOverlay(overlay))));
   }
@@ -330,111 +280,28 @@ export default class Machines extends View {
     return v_flex().child(band).child(v_flex().px(10).pt(6).pb(4).gap(3).children(rows));
   }
 
-  // A compose project as one line; open, its containers under it.
-  projectRows(t, machine, project, list, stats) {
-    const key = `${machineLabel(machine)}|${project ?? "-"}`;
+  // "Docker   7 running · 20 stopped · 1 unhealthy        Open in Docker"
+  dockerLine(t, result) {
+    const list = result.data?.docker;
+    if (!list || !list.length) return null;
     const counts = {};
     for (const c of list) {
       const s = containerState(c);
-      counts[s] = (counts[s] ?? 0) + 1;
+      const group = s === "running" || s === "starting" ? "running" : s === "exited" || s === "created" ? "stopped" : s;
+      counts[group] = (counts[group] ?? 0) + 1;
     }
-    const bad = (counts.unhealthy ?? 0) + (counts.failed ?? 0) + (counts.restarting ?? 0);
-    // A project with trouble opens by itself until you close it.
-    const open = this.open.has(key) || (bad > 0 && !this.open.has(`closed:${key}`));
-    const summary = Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(" · ");
-    const worst = bad ? t.blocked : counts.running ? (t.ansi2 ?? t.done) : t.dim;
-    const line = h_flex().id(`project-${key}`).px(10).py(3).gap(8).items_center().cursor_pointer()
-      .text_size(11.5).hover((s) => s.bg(t.hover))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click((_e, cx) => {
-        if (open) { this.open.delete(key); this.open.add(`closed:${key}`); } else { this.open.add(key); this.open.delete(`closed:${key}`); }
-        cx.notify();
-      })
-      .child(div().w(10).flex_none().text_color(t.dim).child(open ? "▾" : "▸"))
-      .child(div().flex_none().w(7).h(7).rounded(4).bg(worst))
-      .child(div().flex_none().font_medium().text_color(t.foreground).child(project ?? "other containers"))
-      .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(bad ? t.blocked : t.dim)
-        .child([summary, list[0]?.folder].filter(Boolean).join(" · ")));
-    if (!open) return [line];
-    return [line, ...list.flatMap((c) => this.containerRows(t, machine, project, c, stats[c.name]))];
-  }
-
-  containerRows(t, machine, project, c, stat) {
-    const key = `${machineLabel(machine)}|${c.name}`;
-    const state = containerState(c);
-    const running = c.state === "running" || c.state === "restarting";
-    const short = project && c.name.startsWith(`${project}-`) ? c.name.slice(project.length + 1) : c.name;
-    const usage = stat && running ? `${stat.cpu.toFixed(1)}% · ${stat.mem}` : "";
-    const row = h_flex().id(`c-${key}`).pl(36).pr(10).py(2).gap(8).items_center().text_size(11).hover((s) => s.bg(t.hover))
-      .child(div().flex_none().w(7).h(7).rounded(4).bg(this.stateColor(t, state)))
-      .child(v_flex().flex_1().min_w(0)
-        .child(div().truncate().text_color(running ? t.foreground : t.muted).child(short))
-        .child(div().truncate().text_size(10).text_color(state === "unhealthy" || state === "failed" ? t.blocked : t.dim)
-          .child([c.status, usage].filter(Boolean).join(" · "))))
-      .child(this.button(t, `logs-${key}`, "Logs", (_e, cx) => this.showLogs(machine, c, cx)))
-      .when(running, (el) => el
-        .child(this.button(t, `restart-${key}`, "Restart", (_e, cx) => { this.confirming = { key, action: "restart" }; cx.notify(); }))
-        .child(this.button(t, `stop-${key}`, "Stop", (_e, cx) => { this.confirming = { key, action: "stop" }; cx.notify(); }, true)))
-      .when(!running, (el) => el.child(this.button(t, `start-${key}`, "Start", (_e, cx) => this.docker(machine, c, "start", cx))));
-    const out = [row];
-    if (this.confirming?.key === key) out.push(this.confirmRow(t, machine, c, this.confirming.action));
-    const note = this.notes[key];
-    if (note) out.push(div().pl(51).pb(2).text_size(10.5).text_color(note.error ? t.blocked : t.dim).child(note.text));
-    return out;
-  }
-
-  confirmRow(t, machine, c, action) {
-    const key = `${machineLabel(machine)}|${c.name}`;
-    const why = action === "stop"
-      ? "Whatever uses it (an app, its tests, an agent's dev server) loses it until it is started again."
-      : "It goes away for a few seconds; connections to it drop.";
-    return v_flex().ml(36).mr(10).mb(4).px(10).py(6).gap(5).rounded(7).border_1().border_color(t.blocked).text_size(11)
-      .child(div().text_color(t.foreground).child(`${action === "stop" ? "Stop" : "Restart"} ${c.name} on ${machineLabel(machine)}?`))
-      .child(div().text_size(10.5).text_color(t.dim).child(why))
-      .child(h_flex().gap(6).justify_end()
-        .child(this.button(t, `no-${key}`, "Cancel", (_e, cx) => { this.confirming = null; cx.notify(); }))
-        .child(div().id(`yes-${key}`).px(8).py(1).rounded(5).flex_none().text_size(11).font_medium()
-          .bg(t.blocked).text_color(t.background).cursor_pointer().hover((s) => s.opacity(0.85))
-          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .on_click((_e, cx) => this.docker(machine, c, action, cx))
-          .child(action === "stop" ? "Stop" : "Restart")));
-  }
-
-  dockerSection(t, result) {
-    const list = result.data?.docker;
-    if (!list || !list.length) return [];
-    const byProject = new Map();
-    for (const c of list) {
-      if (!byProject.has(c.project)) byProject.set(c.project, []);
-      byProject.get(c.project).push(c);
-    }
-    const running = list.filter((c) => c.state === "running").length;
-    const rows = [div().px(10).pt(6).pb(2).text_size(10).text_color(t.dim)
-      .child(`Docker · ${running} of ${list.length} containers running`)];
-    const ordered = [...byProject.keys()].sort((a, b) => (a === null) - (b === null) || String(a).localeCompare(String(b)));
-    for (const project of ordered) rows.push(...this.projectRows(t, result.machine, project, byProject.get(project), result.data.stats ?? {}));
-    return rows;
-  }
-
-  logPanel(t) {
-    const logs = this.logs;
-    const font = settings().font_family ?? "JetBrains Mono";
-    return v_flex()
-      .flex_none()
-      .h(260)
-      .border_t(1)
-      .border_color(t.border)
-      .child(h_flex().h(28).flex_none().px(10).gap(6).items_center().text_size(11)
-        .child(div().flex_none().font_semibold().text_color(t.foreground).child("Logs"))
-        .child(div().flex_1().min_w(0).truncate().text_size(10).text_color(t.dim)
-          .child(`${logs.name} · ${machineLabel(logs.machine)} · last ${LOG_LINES} lines`))
-        .child(this.button(t, "logs-close", "✕", (_e, cx) => { this.logs = null; cx.notify(); })))
-      .child(v_flex().id("log-lines").flex_1().min_h(0).px(10).pb(6).overflow_y_scrollbar()
-        .font_family(font).text_size(10.5).text_color(t.muted)
-        .when(logs.loading, (el) => el.child(div().text_color(t.dim).child("reading the logs…")))
-        .when(Boolean(logs.error), (el) => el.child(div().text_color(t.blocked).child(logs.error)))
-        .children(logs.lines.map((l, i) => div().id(`l-${i}`).whitespace_nowrap().truncate()
-          .text_color(/\b(error|fatal|panic|exception|fail(ed)?)\b/i.test(l) ? t.blocked : t.muted).child(l || " "))));
+    const order = ["running", "stopped", "unhealthy", "failed", "restarting", "paused", "dead"];
+    const bad = (counts.unhealthy ?? 0) + (counts.failed ?? 0) + (counts.restarting ?? 0) + (counts.dead ?? 0);
+    const text = order.filter((k) => counts[k]).map((k) => `${counts[k]} ${k}`).join(" · ");
+    const name = machineLabel(result.machine);
+    return h_flex().px(10).pb(6).gap(8).items_center().text_size(11)
+      .child(div().w(52).flex_none().text_color(t.muted).child("Docker"))
+      .child(div().flex_none().w(7).h(7).rounded(4).bg(bad ? t.blocked : counts.running ? (t.ansi2 ?? t.done) : t.dim))
+      .child(div().flex_1().min_w(0).truncate().text_color(bad ? t.blocked : t.foreground).child(text))
+      .child(this.button(t, `docker-${name}`, "Open in Docker", () => {
+        setShared(DOCKER_REQUEST, { search: name, at: Date.now() });
+        openOverlay(DOCKER_WINDOW);
+      }));
   }
 
   render(_props, cx) {
@@ -443,25 +310,22 @@ export default class Machines extends View {
     for (const machine of this.targets()) {
       const result = this.results[machineLabel(machine)] ?? { machine, loading: true };
       sections.push(this.machineCard(t, { ...result, machine }));
-      sections.push(...this.dockerSection(t, { ...result, machine }));
+      const docker = this.dockerLine(t, { ...result, machine });
+      if (docker) sections.push(docker);
     }
     return v_flex()
       .id("machines")
       .track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key !== "escape") return;
-        if (this.confirming) this.confirming = null;
-        else if (this.logs) this.logs = null;
-        else closeOverlay(props()?.overlay);
+        closeOverlay(props()?.overlay);
         cx.stop_propagation();
-        cx.notify();
       })
       .size_full()
       .text_size(13)
       .child(this.header(t))
       .child(v_flex().id("machine-list").flex_1().min_h(0).pb(8).overflow_y_scrollbar().children(sections))
-      .when(Boolean(this.logs), (el) => el.child(this.logPanel(t)))
       .child(div().flex_none().px(10).py(5).border_t(1).border_color(t.border).text_size(10).text_color(t.dim)
-        .child("Projects with trouble open by themselves. Stop and Restart ask first."));
+        .child("Colors: 75% and up warns, 90% and up is red. Containers: Open in Docker (Ctrl+Shift+S)."));
   }
 }
