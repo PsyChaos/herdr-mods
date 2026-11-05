@@ -8,14 +8,24 @@
 // and asks that machine's `gh` (its own login) for the open PRs with their
 // checks, and the latest run of each workflow on the checked-out branch. It only
 // reads; nothing is written to GitHub.
-// Notifications come while this window is open (it comes back after a restart
-// until you close it).
+// Notifications come from a second copy of this mod, the watcher: an invisible
+// 2×2 kept window (props.watch) that the panel starts, so they come while the
+// panel is closed and after a restart. The panel's footer turns it off and on.
 // "Send to an agent" puts a failed run's message in an agent's input, unsent.
 // Runs as a window: ctrl-shift-r ("mod.open:ci").
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { agents, panes, spaces, machines, exec, hc, notify, run, theme, props, closeOverlay, settings, window as hostWindow } from "herdr";
+import { agents, panes, spaces, machines, exec, hc, notify, run, theme, props, openOverlay, closeOverlay, shared, setShared, settings, window as hostWindow } from "herdr";
+
+// The watcher's window. Herdr keeps the spec (props too) and reopens it on start.
+const WATCHER = { mod: "ci", props: { watch: true }, kind: "window", key: "ci-watch", keep: true,
+  frame: "none", width: 2, height: 2, at: { x: 0, y: 0 } };
+// Shared {overlay, at} while the watcher runs; {off: true} once turned off.
+const WATCH_KEY = "ci.watch";
+// The watcher says it is alive this often; the panel restarts one quiet for longer.
+const HEARTBEAT_MS = 60000;
+const WATCH_STALE_MS = 3 * HEARTBEAT_MS;
 
 const REFRESH_MS = 60000;
 // While something runs, look more often so the notification comes soon after.
@@ -164,24 +174,60 @@ function parseLog(text) {
 
 export default class Ci extends View {
   init(_props, cx) {
+    this.watcher = Boolean(props()?.watch);
     this.results = {};
     // Last state of every PR and workflow seen, to notify when one finishes.
     this.seen = new Map();
     this.primed = new Set();
-    this.botsOpen = new Set();
-    this.log = null;
-    this.note = null;
-    this.search = InputState.new({ placeholder: "Search: space, repo, #12, title, branch, author, check…" });
-    this.search.on("change", (_e, cx) => cx.notify());
-    this.search.focus();
-    cx.timer.after(600, () => this.search.focus());
-    this.handle = cx.focus_handle();
+    if (this.watcher) {
+      this.overlay = props()?.overlay;
+      this.beat();
+    } else {
+      this.botsOpen = new Set();
+      this.log = null;
+      this.note = null;
+      this.search = InputState.new({ placeholder: "Search: space, repo, #12, title, branch, author, check…" });
+      this.search.on("change", (_e, cx) => cx.notify());
+      this.search.focus();
+      cx.timer.after(600, () => this.search.focus());
+      this.handle = cx.focus_handle();
+      this.startWatcher();
+    }
     this.refresh(cx);
     cx.timer.every(BUSY_REFRESH_MS, (cx) => {
       const busy = this.busy();
       const stale = Object.values(this.results).some((r) => !r.at || Date.now() - r.at >= REFRESH_MS - 1000);
       if (busy || stale) this.refresh(cx);
+      if (this.watcher && Date.now() - this.beatAt >= HEARTBEAT_MS) this.beat();
     });
+  }
+
+  // The watcher tells the panel it is alive, and how to close it.
+  beat() {
+    this.beatAt = Date.now();
+    setShared(WATCH_KEY, { overlay: this.overlay, at: this.beatAt });
+  }
+
+  watchState() {
+    return shared(WATCH_KEY) ?? {};
+  }
+
+  // Starts the watcher unless it runs or was turned off.
+  startWatcher() {
+    const w = this.watchState();
+    if (w.off || (w.at && Date.now() - w.at < WATCH_STALE_MS)) return;
+    openOverlay(WATCHER);
+  }
+
+  setWatching(on) {
+    const w = this.watchState();
+    if (on) {
+      setShared(WATCH_KEY, {});
+      openOverlay(WATCHER);
+    } else {
+      if (w.overlay) closeOverlay(w.overlay);
+      setShared(WATCH_KEY, { off: true });
+    }
   }
 
   // The folders of each machine's spaces: null is this computer. A space's
@@ -251,7 +297,8 @@ export default class Ci extends View {
         } catch (e) {
           error = String(e?.message ?? e).split("\n").pop();
         }
-        if (!error) this.announce(key, repos);
+        // Only the watcher notifies, so an open panel doesn't double them.
+        if (!error && this.watcher) this.announce(key, repos);
         this.results[key] = { machine, repos, error, loading: false, at: Date.now() };
         cx.notify();
       });
@@ -582,7 +629,18 @@ export default class Ci extends View {
           .text_color(/error|fail|✗|exit code [1-9]/i.test(l.text) ? t.blocked : t.muted).child(l.text || " "))));
   }
 
+  // "Notifies when a run finishes, also while closed.  Turn off"
+  footer(t, quiet) {
+    const off = Boolean(this.watchState().off);
+    const where = `Grouped by space; click one to go there${quiet ? ` · ${quiet} repos with nothing open` : ""}.`;
+    return h_flex().flex_none().px(10).py(3).gap(6).items_center().border_t(1).border_color(t.border).text_size(10).text_color(t.dim)
+      .child(div().flex_1().min_w(0).truncate()
+        .child(`${where} ${off ? "Notifications are off." : "Notifies when a run finishes, also while closed."}`))
+      .child(this.button(t, "watch", off ? "Turn on" : "Turn off", (_e, cx) => { this.setWatching(off); cx.notify(); }));
+  }
+
   render(_props, cx) {
+    if (this.watcher) return div().id("ci-watch");
     const t = theme();
     const totals = { prs: 0, fail: 0, running: 0 };
     const sections = [];
@@ -660,7 +718,6 @@ export default class Ci extends View {
       .when(Boolean(this.note), (el) => el.child(div().flex_none().px(10).pt(4).text_size(10.5).text_color(t.blocked).child(this.note)))
       .child(v_flex().id("ci-list").flex_1().min_h(0).pb(8).overflow_y_scrollbar().children(sections))
       .when(Boolean(this.log), (el) => el.child(this.logPanel(t)))
-      .child(div().flex_none().px(10).py(5).border_t(1).border_color(t.border).text_size(10).text_color(t.dim)
-        .child(`Grouped by space; click one to go there${quiet ? ` · ${quiet} repos with nothing open` : ""}. Notifies when a run finishes while this window is open.`));
+      .child(this.footer(t, quiet));
   }
 }

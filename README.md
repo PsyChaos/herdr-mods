@@ -11,6 +11,7 @@ agents at once.
 | [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
 | [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and their Docker containers by project, with logs, start, stop and restart. |
 | [`attach`](attach/) | **Add files.** Pick files, or drop them on its window, and they go into an agent's input as paths: images arrive attached like a pasted one. For an agent on another machine the files are sent there first. |
+| [`team`](team/) | **Agent team.** Agents in one repository, on one branch or in different worktrees, message each other with the `herdr-team` command. The window shows who works where, the files each worktree changed, clashes, and what the agents said; "Introduce" tells them about each other. |
 | [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these panels and any mod you gave a key, with their keys. |
 | [`ci`](ci/) | **PRs & CI.** The open pull requests and CI runs of every repository in your spaces, on every Herdr machine, grouped by space. Notifies when a run finishes and shows a failed step's log, ready to copy to an agent. |
 
@@ -24,7 +25,7 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/palette-plus ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/team herdr-mods/palette-plus ~/.config/herdr-app/mods/
 ~/.config/herdr-app/mods/palette-plus/sync.sh
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
@@ -33,6 +34,8 @@ herdr-app check ~/.config/herdr-app/mods/ports
 herdr-app check ~/.config/herdr-app/mods/ci
 herdr-app check ~/.config/herdr-app/mods/machines
 herdr-app check ~/.config/herdr-app/mods/attach
+herdr-app check ~/.config/herdr-app/mods/team
+install -m 755 herdr-mods/team/herdr-team ~/.local/bin/ && herdr-team setup   # on every Herdr machine
 herdr-app check ~/.config/herdr-app/mods/palette-plus
 ```
 
@@ -55,6 +58,7 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
   "ctrl-shift-r": "mod.open:ci",
   "ctrl-shift-m": "mod.open:machines",
   "ctrl-shift-a": "mod.open:attach",
+  "ctrl-shift-d": "mod.open:team",
   "ctrl-shift-p": "mod.open:palette-plus"
 }
 ```
@@ -62,7 +66,7 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
 asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+R` shows PRs and CI, and
-`Ctrl+Shift+M` the machines, and `Ctrl+Shift+A` adds files to an agent. `Ctrl+Shift+P` replaces Herdr's palette with one
+`Ctrl+Shift+M` the machines, `Ctrl+Shift+A` adds files to an agent, and `Ctrl+Shift+D` shows your agents by repository. `Ctrl+Shift+P` replaces Herdr's palette with one
 that lists all of these.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
@@ -156,8 +160,9 @@ marks a port other computers can reach, not only its own machine.
 
 `Ctrl+Shift+R` lists, under each space, the open PRs of the repositories its
 terminals are in, with their checks, and the latest CI runs of the branch you
-have checked out. Type to search (`vensift fail`, `#64`, `dependabot`). Keep the
-window open somewhere and it notifies you when a run finishes. "Log" on a
+have checked out. Type to search (`vensift fail`, `#64`, `dependabot`). Once it has
+been opened, it notifies you when a run finishes, even with the window closed
+("Turn off" in its footer stops that). "Log" on a
 failed PR shows the failed step's end; "Send to an agent" leaves it, with the
 link, in the input of that space's agent, unsent: you read it and press Enter.
 "Copy" puts the same message on the clipboard. "Open" opens the PR in
@@ -179,6 +184,52 @@ then "Add to …". Each file's path is pasted into the agent's input, unsent:
 Claude Code and Codex show a pasted image path as an attached image
 (`[Image #1]`) and read other files from their path. Write your message and
 press Enter yourself. "Choose…" needs `zenity`; dropping works without it.
+
+## Letting your agents talk to each other
+
+Agents working in one repository, on the same branch or in different
+worktrees, can message each other from the shell:
+
+```sh
+herdr-team who                      # the agents in this repository
+herdr-team say t3n "I'm changing auth.ts; leave it to me"
+herdr-team say all "main is broken after my merge, don't pull yet"
+herdr-team log                      # what was said
+```
+
+A message is typed into the other agent's input and submitted, so it arrives
+as a new message (`hc send`: it waits while you type there and skips an agent
+waiting on a permission dialog). Every message also goes to the repository's
+log, `.git/herdr-team.md`, which git never commits.
+
+`herdr-team setup` teaches your agents to do this on their own: it adds a short
+set of rules to Claude Code's `~/.claude/CLAUDE.md` (as `@HERDR-TEAM.md`) and to
+the `AGENTS.md` of Codex, OpenCode and Pi, where they are installed and the
+rules are missing. With them, an agent runs `herdr-team who` when it starts
+work, tells the others before touching their files, and starts helpers that
+others must reach as Herdr terminals (`hc run --bg … claude "<task>"`) instead
+of hidden built-in subagents. Agents already running read the rules only in
+their next session: `herdr-team introduce` runs `setup` and also tells every
+agent in the repository, by message, who the others are and how to reach them.
+
+`setup` also adds a session-start hook to Claude Code and Codex
+(`herdr-team hook`), and a small plugin doing the same to OpenCode: when a new
+session opens in a Herdr terminal inside a git repository, the agent starts
+with the list of agents working there, without having to remember to ask. Codex asks you once to trust the new hook
+("Hooks need review"); after that it runs on its own.
+
+`Ctrl+Shift+D` opens the Agent team window: under each repository, its
+worktrees and branches, the agents in each, and the files they changed.
+"Introduce" runs `herdr-team introduce` there. The "Messages" tab is an inbox
+of what the agents said to each other: projects on the left, each with its
+conversations (one per pair of agents, and "Everyone"), unread ones in bold;
+click one to read it. The search box finds a repository, branch, agent
+(`t3n`) or file under "Agents", and a message under "Messages". When two agents share one folder, or two worktrees
+change the same file, a red box says so and "Tell them" sends the warning to
+those agents. "Messages" shows what they said to each other.
+
+Agents started with `hc run` are terminals and take part; subagents a coding
+agent starts inside itself are not and can't be reached.
 
 ## Adding a provider to the usage panel
 
@@ -213,7 +264,9 @@ Both need `python3`.
   (ending after 12 hours at the latest) and opens your browser.
 
 - **ci** runs a Python script every minute (every 20 seconds while CI runs),
-  here and on each connected Herdr machine (sent with `hc exec`, nothing is
+  from an invisible 2×2 px window that stays open after you first open the
+  panel (the open panel runs its own as well), here and on each
+  connected Herdr machine (sent with `hc exec`, nothing is
   installed). It reads `git` in your spaces' folders and calls that machine's
   `gh` (`gh pr list`, `gh run list`, and `gh run view --log-failed` when you
   ask for a log), so it uses that machine's GitHub login and API limits. It
@@ -231,6 +284,22 @@ Both need `python3`.
   quotes, so it gets a plain name). It pastes through the clipboard
   (`wl-copy`, `xclip` or `pbcopy`) and, with `wl-paste`, saves the clipboard
   first and puts it back. No network access beyond Herdr's own connection.
+
+- **team** runs a Python script every 8 seconds while its window is open, here
+  and on each connected Herdr machine (sent with `hc exec`, nothing is
+  installed). It reads `git` in your agents' folders without taking git's
+  locks, and each repository's `.git/herdr-team.md`. "Introduce" and "Tell
+  them" run `hc send`; "Clear" empties the log. `herdr-team` runs `hc ls`,
+  `hc get` and `hc send` on its own machine, appends to that log and keeps
+  `~/.local/state/herdr-team/members.json` (which agent last used it where)
+  and `repos.json` (which repositories have a log).
+  `herdr-team setup` (and `introduce`) adds its rules to `~/.claude/CLAUDE.md`
+  (plus `~/.claude/HERDR-TEAM.md`) and to Codex's, OpenCode's and Pi's
+  `AGENTS.md`, only when they are missing; it never changes them afterwards.
+  It also adds a `SessionStart` entry running `herdr-team hook` to
+  `~/.claude/settings.json` and `~/.codex/hooks.json`, unless one is there,
+  and `~/.config/opencode/plugins/herdr-team.js`, which runs that command on a
+  session's first request and adds its output to the session's instructions.
 
 - **palette-plus** copies Herdr's own palette next to itself with `sync.sh`
   when Herdr's changes, and only opens mods.

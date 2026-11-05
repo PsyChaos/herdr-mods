@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Agent team",
+  "overlay": { "kind": "window", "key": "team", "width": 640, "height": 700 }
+}

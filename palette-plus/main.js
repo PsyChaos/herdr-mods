@@ -19,6 +19,7 @@ const KNOWN = {
   browser: ["Open in browser", "web page url file html localhost"],
   "task-board": ["Task board", "tasks helpers agents"],
   attach: ["Add files to an agent", "attach image picture screenshot file upload drop paste"],
+  team: ["Agent team", "agents talk message each other worktrees branches conflicts files changed collaborate introduce"],
   "usage-board": ["Usage", "limits tokens claude codex opencode quota"],
 };
 // The "Mods" group comes right after "Recent".

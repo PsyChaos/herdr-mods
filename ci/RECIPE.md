@@ -2,8 +2,8 @@
 
 The open pull requests and the latest CI runs of every GitHub repository open
 in a Herdr space, on this computer and on every connected machine, grouped by
-space. A notification comes when a PR's checks or a branch's run finish, and a
-failed run's log is one click away, ready to hand to an agent.
+space. A notification comes when a PR's checks or a branch's run finish, even
+while the window is closed, and a failed run's log is one click away, ready to hand to an agent.
 
 ## What you see
 
@@ -51,8 +51,16 @@ A window, 620×640, that you can drag anywhere:
   else passed. A run that finishes between two looks (a new run id) counts too.
   Each finish gives one `notify` ("passed" success 8 s, "failed" error until
   closed, "was cancelled" warning) whose action opens this window. The first
-  answer from each machine only records where things stand. Notifications come
-  only while the window is open.
+  answer from each machine only records where things stand.
+- Notifications come from the watcher, a second copy of this mod opened with
+  `openOverlay` as a kept, frameless 2×2 window (key `ci-watch`, `props.watch`)
+  at the top left. It draws nothing, looks like the panel does and is the only
+  one that calls `notify`, so an open panel doesn't double them. Herdr reopens
+  it on start. Every 60 s it writes `{overlay, at}` to `shared("ci.watch")`;
+  the panel starts a new one when that is older than 3 minutes.
+- The footer says "Notifies when a run finishes, also while closed." with
+  "Turn off" (closes the watcher, `ci.watch` = `{off: true}`), or
+  "Notifications are off." with "Turn on".
 - "Log" runs `gh run view <id> --repo <repo> --log-failed` on that machine,
   drops timestamps and colours, and keeps the last 60 lines. An expired log
   (HTTP 410) says so.
@@ -74,10 +82,11 @@ A window, 620×640, that you can drag anywhere:
 
 ## Built from
 
-- `main.js`: the window; `mod.json`: `place: none`, a window overlay.
+- `main.js`: the window, and the watcher when `props().watch`; `mod.json`:
+  `place: none`, a window overlay.
 - Herdr: `spaces()`, `panes()`, `agents()`, `machines()`, `exec`, `hc([...])`,
   `notify`, `run("space.select" | "pane.focus" | "terminal.paste")`, `settings().font_family`, `window().platform`,
-  `props().overlay`/`closeOverlay`.
+  `props()`, `openOverlay`/`closeOverlay`, `shared`/`setShared`.
 - gpui-base `InputState` + `Input`.
 
 ## Watch out
@@ -90,12 +99,14 @@ A window, 620×640, that you can drag anywhere:
   pipe hides that unless the script keeps the exit code.
 - `gh` must be logged in on each machine (`gh auth login`); the probe says so
   when it isn't.
+- A kept window that covers the window (width/height of 1 or less are a share)
+  swallows every click: the watcher is 2 px.
 
 ## Done when
 
 - `herdr-app check` passes.
 - Ctrl+Shift+R lists each space with its repositories' open PRs and checks.
-- Pushing to a PR branch while the window is open gives a notification when
-  its checks finish.
+- Pushing to a PR branch, then closing the window, gives a notification when
+  its checks finish, also after restarting Herdr.
 - "Log" on a failed PR shows the failed step's last lines; "Send to an agent"
   leaves the message in that space's agent's input, unsent.

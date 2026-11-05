@@ -1,0 +1,519 @@
+#!/usr/bin/env python3
+"""herdr-team: messages between the coding agents working in one git repository.
+
+  herdr-team who                 the agents in this repository: any worktree, any branch
+  herdr-team say <to> <message>  send to one agent (its address, e.g. t3n) or to "all"
+  herdr-team log [N]             the repository's last N messages (default 20)
+  herdr-team introduce           tell every agent in this repository who the others are and
+                                 how to reach them, after writing the rules below (setup)
+  herdr-team setup               only write the rules into each agent's instructions file:
+                                 Claude Code ~/.claude/HERDR-TEAM.md (and @HERDR-TEAM.md in
+                                 ~/.claude/CLAUDE.md), Codex ~/.codex/AGENTS.md, OpenCode
+                                 ~/.config/opencode/AGENTS.md, Pi ~/.pi/agent/AGENTS.md, for
+                                 the agents installed here; a file that has them is left alone.
+                                 Also adds "herdr-team hook" as a session-start hook to Claude
+                                 Code (~/.claude/settings.json) and Codex (~/.codex/hooks.json),
+                                 and a plugin running it to OpenCode
+                                 (~/.config/opencode/plugins/herdr-team.js)
+  herdr-team hook                for those hooks: in a Herdr terminal inside a git repository,
+                                 prints who works there (the new session reads it); else nothing
+
+A message arrives in the other agent's input as a new message and is
+submitted (hc send): it waits while a person is typing there, and is not typed
+into an agent waiting on a dialog. Every message is also kept in the
+repository's log, <git common dir>/herdr-team.md, which git never commits.
+Agents are the Herdr terminals that report a status, on this machine, whose
+process runs in the repository or that last used herdr-team in it (an agent
+started one folder up joins once it runs any herdr-team command;
+~/.local/state/herdr-team/members.json remembers where each one did).
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+LOG_FILE = "herdr-team.md"
+# Where each agent last ran herdr-team: {address: worktree folder}. The Agent
+# team window reads it too.
+MEMBERS_FILE = os.path.expanduser("~/.local/state/herdr-team/members.json")
+# Every repository whose log herdr-team wrote: [git common dir, ...]. The Agent
+# team window reads their logs even after their agents end.
+REPOS_FILE = os.path.expanduser("~/.local/state/herdr-team/repos.json")
+SEND_TIMEOUT_S = 120
+# Agents that haven't reported a status yet (just started) still count.
+AGENT_PROGRAMS = {"claude", "claude-code", "codex", "opencode", "pi", "gemini", "aider", "copilot", "amp", "goose", "cursor-agent"}
+
+
+# What every agent should know, written by `setup` into its instructions file.
+RULES = """## Other agents in the same repository (Herdr)
+
+When `HC_TERMINAL_ID` is set you run in a Herdr terminal, and other coding agents
+may work in the same repository at the same time: on your branch or in another
+worktree. Talk to them with `herdr-team`:
+
+- When you start work in a git repository, run `herdr-team who`. If other agents
+  are listed, tell them what you will change before you edit files they may be
+  touching: `herdr-team say <address|all> "..."`.
+- Before you edit a file another agent named, or revert, stash, reset, rebase,
+  force-push or delete files you didn't change yourself, read `herdr-team log`
+  and ask the agent concerned.
+- Messages from them arrive as `[team] ...` inside `<hc from="...">`. Answer when
+  a message needs an answer; don't reply only to acknowledge. Keep messages short
+  and concrete: files, branch, what you need.
+
+### Sub-agents the others can reach
+
+A helper started with your own built-in subagent tool is not a terminal: no other
+agent can message it. When a helper should work for long, change code, or
+coordinate with other agents, start it as a Herdr terminal in its folder instead:
+
+    hc run --bg --cwd <worktree> --label task="<short name>" claude "<task>"
+    hc run --bg --cwd <worktree> --label task="<short name>" codex "<task>"
+
+It joins `herdr-team` like you do (`herdr-team who` lists it). Wait for it with
+`hc wait <t>`, read its screen with `hc read <t>`, and send it more with
+`herdr-team say <t> "..."`. For a short lookup the built-in tool is fine.
+"""
+BEGIN = "<!-- herdr-team rules: `herdr-team setup` adds them when missing and never changes them -->"
+END = "<!-- /herdr-team -->"
+INCLUDE = "@HERDR-TEAM.md"
+# The session-start hook "setup" adds to Claude Code and Codex.
+HOOK_COMMAND = "herdr-team hook"
+HOOK_TIMEOUT_S = 15
+# OpenCode has no such hook: "setup" installs this plugin instead, and updates
+# it while its first line is still this one (a plugin you changed is yours).
+OPENCODE_PLUGIN_MARK = "// herdr-team plugin for OpenCode"
+OPENCODE_PLUGIN = '''// herdr-team plugin for OpenCode (`herdr-team setup` installs it as ~/.config/opencode/plugins/herdr-team.js)
+// OpenCode has no session-start hook like Claude Code and Codex: this plugin
+// runs `herdr-team hook` once per session, on its first model request, and
+// adds what it prints (who works in this repository) to that session's
+// system instructions. Outside a Herdr terminal or a git repository the hook
+// prints nothing and nothing is added.
+
+import { execFile } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const TIMEOUT_MS = 15000;
+// sessionID → note ("" when there is none), so a session keeps the same text.
+const notes = new Map();
+
+function run(program, dir) {
+  return new Promise((resolve) => {
+    const child = execFile(program, ["hook"], { cwd: dir, timeout: TIMEOUT_MS }, (error, stdout) => {
+      if (error) return resolve(error.code === "ENOENT" ? null : "");
+      try {
+        resolve(JSON.parse(stdout).hookSpecificOutput?.additionalContext ?? "");
+      } catch {
+        resolve("");
+      }
+    });
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(JSON.stringify({ hook_event_name: "SessionStart", cwd: dir }));
+  });
+}
+
+// From PATH, else ~/.local/bin; "" when it fails.
+async function note(dir) {
+  const text = await run("herdr-team", dir);
+  return text ?? (await run(join(homedir(), ".local", "bin", "herdr-team"), dir)) ?? "";
+}
+
+export default {
+  id: "herdr-team",
+  async setup(ctx) {
+    if (!process.env.HC_TERMINAL_ID) return;
+    const dir = ctx.location?.directory ?? process.cwd();
+    await ctx.session.hook("context", async (event) => {
+      if (!notes.has(event.sessionID)) notes.set(event.sessionID, await note(dir));
+      const text = notes.get(event.sessionID);
+      if (text) event.system.push({ type: "text", text });
+    });
+  },
+};
+'''
+
+
+def run(argv, timeout=20):
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        return 1, "", f"timed out after {timeout} s"
+    except OSError as e:
+        return 1, "", str(e)
+
+
+def git(cwd, *args):
+    code, out, _ = run(["git", "--no-optional-locks", "-C", cwd, *args])
+    return out.strip() if code == 0 else None
+
+
+def repo_of(cwd):
+    """{top, common, branch} of the git worktree at cwd, or None."""
+    if not cwd or not os.path.isdir(cwd):
+        return None
+    top = git(cwd, "rev-parse", "--show-toplevel")
+    if not top:
+        return None
+    common = os.path.normpath(os.path.join(top, git(top, "rev-parse", "--git-common-dir") or ".git"))
+    return {"top": top, "common": common, "branch": git(top, "branch", "--show-current") or "detached HEAD"}
+
+
+def short(path):
+    home = os.path.expanduser("~")
+    return "~" + path[len(home):] if path == home or path.startswith(home + "/") else path
+
+
+def describe(address, program=None):
+    """One agent terminal: address, program (hc ls names it before the agent
+    reports a status), live folder, status, and its repository."""
+    code, out, _ = run(["hc", "get", "--json", address])
+    if code != 0:
+        return None
+    t = json.loads(out)
+    status = t.get("status") or {}
+    cwd = (t.get("foreground") or {}).get("cwd") or t.get("cwd")
+    return {"address": address, "program": status.get("app") or program or "agent",
+            "state": status.get("state") or "-", "where": (t.get("labels") or {}).get("where") or "",
+            "task": (t.get("labels") or {}).get("task") or "", "cwd": cwd, "repo": repo_of(cwd)}
+
+
+def agents_here():
+    """Every live agent terminal on this machine, described."""
+    code, out, err = run(["hc", "ls", "--json"])
+    if code != 0:
+        sys.exit(f"herdr-team: hc ls failed: {err.strip() or out.strip()}")
+    listed = json.loads(out)
+    listed = listed if isinstance(listed, list) else listed.get("terminals", [])
+    live = [t for t in listed if t.get("state") == "live" and "/" not in t["address"]
+            and (t.get("status") or t.get("agent") in AGENT_PROGRAMS)]
+    with ThreadPoolExecutor(8) as pool:
+        return [a for a in pool.map(lambda t: describe(t["address"], t.get("agent")), live) if a]
+
+
+def context(cwd=None):
+    """(me or None, my repository, the agents in it)."""
+    me_address = os.environ.get("HC_TERMINAL_ID")
+    repo = repo_of(cwd or os.getcwd())
+    if not repo:
+        sys.exit("herdr-team: this folder is not in a git repository")
+    everyone = agents_here()
+    members = remember(me_address, repo, {a["address"] for a in everyone})
+    # An agent belongs to the repository it last ran herdr-team in, wherever its
+    # process started (agents often start one folder up), else to its folder's.
+    team = []
+    for a in everyone:
+        mine = repo_of(members[a["address"]]) if a["address"] in members else a["repo"]
+        if mine and mine["common"] == repo["common"]:
+            team.append({**a, "repo": mine})
+    team.sort(key=lambda a: a["address"] != me_address)
+    me = next((a for a in team if a["address"] == me_address), None)
+    return me, repo, team
+
+
+def remember(me_address, repo, live):
+    """Records that the caller now works in repo; returns every live agent's last worktree."""
+    try:
+        with open(MEMBERS_FILE, encoding="utf-8") as f:
+            members = json.load(f)
+    except (OSError, ValueError):
+        members = {}
+    members = {k: v for k, v in members.items() if k in live}
+    if me_address in live:
+        members[me_address] = repo["top"]
+    try:
+        os.makedirs(os.path.dirname(MEMBERS_FILE), exist_ok=True)
+        tmp = f"{MEMBERS_FILE}.{os.getpid()}"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(members, f)
+        os.replace(tmp, MEMBERS_FILE)
+    except OSError:
+        pass
+    return members
+
+
+def name_of(agent):
+    if not agent:
+        return "the user"
+    return f'{agent["address"]} ({agent["program"]}, branch {agent["repo"]["branch"]})'
+
+
+def repo_name(repo):
+    return os.path.basename(repo["common"][:-5] if repo["common"].endswith("/.git") else repo["common"])
+
+
+def log_path(repo):
+    return os.path.join(repo["common"], LOG_FILE)
+
+
+def append_log(repo, line):
+    with open(log_path(repo), "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    try:
+        with open(REPOS_FILE, encoding="utf-8") as f:
+            known = json.load(f)
+    except (OSError, ValueError):
+        known = []
+    if repo["common"] not in known:
+        try:
+            os.makedirs(os.path.dirname(REPOS_FILE), exist_ok=True)
+            tmp = f"{REPOS_FILE}.{os.getpid()}"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(known + [repo["common"]], f)
+            os.replace(tmp, REPOS_FILE)
+        except OSError:
+            pass
+
+
+def tag(agent):
+    """How the log names an agent: "t3w(claude-code)"."""
+    return f'{agent["address"]}({agent["program"]})' 
+
+
+def who_lines(me, repo, team):
+    lines = [f'Agents in {repo_name(repo)} ({short(repo["common"])}):']
+    for a in team:
+        mark = "  <- you" if me and a["address"] == me["address"] else ""
+        task = f'  "{a["task"]}"' if a["task"] else ""
+        lines.append(f'  {a["address"]:<6} {a["program"]:<12} {a["state"]:<8} {a["repo"]["branch"]:<24} {short(a["repo"]["top"])}{task}{mark}')
+    if len(team) < 2:
+        lines.append("No other agent works in this repository right now.")
+    else:
+        lines.append('Send one with: herdr-team say <address|all> "message"')
+    return lines
+
+
+def who():
+    print("\n".join(who_lines(*context())))
+
+
+def hook():
+    """Session-start hook: who works in the session's repository, for the new
+    session to read. Prints nothing outside Herdr or a git repository, and never
+    fails the session."""
+    try:
+        event = json.load(sys.stdin) if not sys.stdin.isatty() else {}
+    except ValueError:
+        event = {}
+    cwd = (event.get("cwd") if isinstance(event, dict) else None) or os.getcwd()
+    if not os.environ.get("HC_TERMINAL_ID") or not repo_of(cwd):
+        return
+    try:
+        me, repo, team = context(cwd)
+    except (SystemExit, Exception):
+        return
+    lines = who_lines(me, repo, team)
+    lines[0] = "[herdr-team] You run in a Herdr terminal. " + lines[0]
+    if len(team) > 1:
+        lines.append("Tell them before you edit files they may be touching; read herdr-team log before you revert or delete their work.")
+    # JSON, not plain text: Codex takes output starting with "[" for broken JSON.
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(lines)}}))
+
+
+def deliver(targets, message_for):
+    """hc send to each target in parallel; {address: None or why it failed}."""
+    def one(a):
+        code, out, err = run(["hc", "send", a["address"], message_for(a)], timeout=SEND_TIMEOUT_S)
+        return None if code == 0 else (err.strip() or out.strip() or f"exit {code}").splitlines()[-1]
+    with ThreadPoolExecutor(8) as pool:
+        return dict(zip([a["address"] for a in targets], pool.map(one, targets)))
+
+
+def report(repo, me, to, text, results):
+    """Logs a send ("- 2026-11-04 20:37 t3w(claude-code) → t3x(codex): text") and
+    prints each result; exits 1 when one failed."""
+    failed = {k: v for k, v in results.items() if v}
+    note = "".join(f" (not delivered to {k}: {v})" for k, v in failed.items())
+    sender = tag(me) if me else "user"
+    append_log(repo, f"- {time.strftime('%Y-%m-%d %H:%M')} {sender} → {to}: {text}{note}")
+    for address, error in results.items():
+        print(f"{address}: {'delivered' if not error else 'NOT delivered: ' + error}")
+    if failed:
+        sys.exit(1)
+
+
+def say(to, text):
+    me, repo, team = context()
+    text = text.strip()
+    if not text:
+        sys.exit("herdr-team: the message is empty")
+    others = [a for a in team if not me or a["address"] != me["address"]]
+    if to == "all":
+        targets = others
+        if not targets:
+            sys.exit("herdr-team: no other agent works in this repository (herdr-team who)")
+    else:
+        found = next((a for a in team if a["address"] == to), None)
+        if not found:
+            sys.exit(f"herdr-team: {to} is not an agent in this repository (herdr-team who lists them)")
+        targets = [found]
+    reply = f' Reply with: herdr-team say {me["address"]} "..." (only if you have something to add).' if me else ""
+    message = f"[team] {name_of(me)} {'to everyone' if to == 'all' else 'to you'}: {text}{reply}"
+    report(repo, me, to if to == "all" else tag(targets[0]), " ".join(text.split()), deliver(targets, lambda a: message))
+
+
+def member(a):
+    return f'{a["address"]} ({a["program"]}, branch {a["repo"]["branch"]}, {short(a["repo"]["top"])})'
+
+
+def intro_for(target, team):
+    others = "; ".join(member(a) for a in team if a["address"] != target["address"])
+    return (f"[team] Other agents work in this repository at the same time as you: {others}. "
+            'Talk to them from the shell: herdr-team who lists who works here, herdr-team say <address|all> "..." '
+            "sends a message that arrives in their input, herdr-team log shows what was said. Tell them what you will "
+            "change before you edit files they may be touching, and ask before you revert, stash or reset files you "
+            "didn't change. Answer a message when it needs an answer; don't reply only to acknowledge. Helpers that "
+            'should be reachable start as Herdr terminals: hc run --bg --cwd <worktree> --label task="<name>" claude "<task>". '
+            "Your instructions file has these rules from your next session on.")
+
+
+def introduce():
+    setup()
+    me, repo, team = context()
+    targets = [a for a in team if not me or a["address"] != me["address"]]
+    if len(team) < 2 or not targets:
+        print(f"No other agent works in {repo_name(repo)} right now; nobody to introduce.")
+        return
+    report(repo, me, "all", f"(introduced {len(team)} agents to each other)", deliver(targets, lambda a: intro_for(a, team)))
+
+
+def write_if_changed(path, text):
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == text:
+                return False
+    except FileNotFoundError:
+        pass
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+    return True
+
+
+def read(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def with_block(text):
+    """text with the rules added at the end, unless it has them (maybe edited)."""
+    if END in text:
+        return text
+    return (text.rstrip("\n") + "\n\n" if text.strip() else "") + f"{BEGIN}\n{RULES}{END}\n"
+
+
+def with_hook(text, layout):
+    """JSON text of a Claude Code settings or Codex hooks file with the
+    session-start hook added, or None when it has it already (or isn't JSON)."""
+    try:
+        data = json.loads(text) if text and text.strip() else {}
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    starts = data.setdefault("hooks", {}).setdefault("SessionStart", [])
+    if HOOK_COMMAND in json.dumps(starts):
+        return None
+    starts.append({"hooks": [{"type": "command", "command": HOOK_COMMAND, "timeout": HOOK_TIMEOUT_S}]})
+    return json.dumps(data, indent=layout, ensure_ascii=False) + "\n"
+
+
+def add_hook(path, done):
+    """Adds the hook to path (created if missing); records (path, changed)."""
+    text = read(path)
+    new = with_hook(text, 2)
+    if new is None and text is not None and HOOK_COMMAND not in text:
+        print(f"{short(path)}: not valid JSON, hook not added")
+        return
+    done.append((path, new is not None and write_if_changed(path, new)))
+
+
+def add_plugin(path, done):
+    """Writes the OpenCode plugin, unless a changed copy is there; records (path, changed)."""
+    text = read(path)
+    if text is not None and not text.startswith(OPENCODE_PLUGIN_MARK):
+        print(f"{short(path)}: changed by you, left alone")
+        return
+    done.append((path, write_if_changed(path, OPENCODE_PLUGIN)))
+
+
+def setup():
+    """Writes RULES for each agent installed here, and the session-start hook
+    for Claude Code and Codex; prints what it did per file."""
+    home = os.path.expanduser("~")
+    done = []
+    hooks = []
+    claude = os.path.join(home, ".claude")
+    if os.path.isdir(claude):
+        rules = os.path.join(claude, "HERDR-TEAM.md")
+        changed = read(rules) is None and write_if_changed(rules, RULES)
+        main = os.path.join(claude, "CLAUDE.md")
+        text = read(main) or ""
+        if not any(line.strip() == INCLUDE for line in text.splitlines()):
+            write_if_changed(main, (text.rstrip("\n") + "\n\n" if text.strip() else "") + INCLUDE + "\n")
+            changed = True
+        done.append((main, changed))
+        add_hook(os.path.join(claude, "settings.json"), hooks)
+    codex = os.environ.get("CODEX_HOME") or os.path.join(home, ".codex")
+    for folder in (codex, os.path.join(home, ".config", "opencode"), os.path.join(home, ".pi", "agent")):
+        if os.path.isdir(folder):
+            path = os.path.join(folder, "AGENTS.md")
+            done.append((path, write_if_changed(path, with_block(read(path) or ""))))
+    if os.path.isdir(codex):
+        add_hook(os.path.join(codex, "hooks.json"), hooks)
+    opencode = os.path.join(home, ".config", "opencode")
+    if os.path.isdir(opencode):
+        add_plugin(os.path.join(opencode, "plugins", "herdr-team.js"), hooks)
+    for path, changed in done:
+        print(f"{short(path)}: {'rules written' if changed else 'rules already there'}")
+    for path, changed in hooks:
+        print(f"{short(path)}: {'session-start hook added' if changed else 'session-start hook already there'}")
+    if not done:
+        print("No Claude Code, Codex, OpenCode or Pi settings folder here; no rules written.")
+
+
+def log(count):
+    _, repo, _ = context()
+    try:
+        with open(log_path(repo), encoding="utf-8", errors="replace") as f:
+            lines = [l.rstrip("\n") for l in f if l.strip()]
+    except FileNotFoundError:
+        lines = []
+    if not lines:
+        print(f"No messages yet in {repo_name(repo)}.")
+    for line in lines[-count:]:
+        print(line)
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return
+    command = argv[1]
+    if command == "who":
+        who()
+    elif command == "say" and len(argv) >= 4:
+        say(argv[2], " ".join(argv[3:]))
+    elif command == "introduce":
+        introduce()
+    elif command == "setup":
+        setup()
+    elif command == "hook":
+        hook()
+    elif command == "log":
+        log(int(argv[2]) if len(argv) > 2 and argv[2].isdigit() else 20)
+    else:
+        sys.exit(__doc__.strip())
+
+
+if __name__ == "__main__":
+    main(sys.argv)
