@@ -2,7 +2,8 @@
 
 A compact usage panel: for every provider and every Herdr machine, how full
 the 5-hour and weekly limits are and when they reset. Ships with readers for
-Claude Code and Codex; any provider can be added as one shell script.
+Claude Code, Codex, Antigravity and OpenCode; any provider can be added as one
+shell script.
 
 ![Usage board](preview.png)
 
@@ -15,7 +16,7 @@ Claude Code and Codex; any provider can be added as one shell script.
 - **Provider rows**: name 12px semibold, plan in 10px `dim`, and on the right
   only a note that matters: "stale" (every window stale), the data's age
   when older than 30 minutes ("2h ago"), "connecting…", or the error in `blocked`.
-- **Window lines** (10px): label ("5h", "Week") 34px, a 4px bar that fills
+- **Window lines** (10px): label ("5h", "Week", Antigravity's "G 5h", "Arg wk") 44px, a 4px bar that fills
   in proportion, the percent 34px ("8%"), the reset clock 46px ("16:40" today,
   "Nov 9" another day, "passed" when past).
 
@@ -38,7 +39,7 @@ Claude Code and Codex; any provider can be added as one shell script.
 
 - `main.js` (view), `dock.js` (block id `usage`), `mod.json` (`place: none`,
   kept 420×420 px window, `key: usage-board`), `CONTRACT.md`,
-  `sources/claude.sh`, `sources/codex.sh`.
+  `sources/claude.sh`, `sources/codex.sh`, `sources/agy.sh`, `sources/opencode.sh`.
 - `sources/claude.sh`: reads the Claude Code login from `CLAUDE_CONFIG_DIR`, or
   the `~/.claude*` folder whose `.credentials.json` changed last, and asks
   `https://claude.ai/api/oauth/usage` (what Claude Code's `/usage` shows) with
@@ -46,8 +47,15 @@ Claude Code and Codex; any provider can be added as one shell script.
   written; an expired token gives `ok: false` until Claude Code runs again.
 - `sources/codex.sh`: reads the newest `token_count` event with real windows
   (`limit_id` "codex"; "premium" entries carry no windows) from
-  `~/.codex/sessions/YYYY/MM/DD/*.jsonl`; `primary` is 5 h, `secondary` the
-  week. Marks a window `stale` once its reset time has passed.
+  `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/*.jsonl` (set `CODEX_HOME` to
+  read another Codex login); `primary` is 5 h, `secondary` the week. Marks a
+  window `stale` once its reset time has passed.
+- `sources/agy.sh`: runs `agy -p /quota` (no model turn, 4-6 s, 9 s limit) in an
+  empty temporary folder. Each tab-separated line (group, window, % remaining,
+  reset) becomes a window: id `<group>-<5h|week>` (`gemini-5h`,
+  `claude-gpt-week`, `gemini-4-argon-week`), label `G 5h`, `C wk`, `Arg wk`.
+  The login is readable only in the desktop session (Herdr terminals, this
+  panel); from a plain ssh shell it reports "not logged in".
 - Herdr: `machines()`, `exec`, `readTextFile`, `appHome()`, `theme()`,
   `props().overlay`/`closeOverlay`, `layout()`, `run("layout.set"|"layout.hide")`.
 
@@ -68,9 +76,10 @@ Claude Code and Codex; any provider can be added as one shell script.
 
 ## Done when
 
-- `herdr-app check` passes and `sh sources/claude.sh` / `sh sources/codex.sh`
-  each print one JSON line and exit 0, also with the login or `~/.codex`
-  missing (`ok: false`).
+- `herdr-app check` passes and `sh sources/claude.sh` / `sh sources/codex.sh` /
+  `sh sources/agy.sh` each print one JSON line and exit 0, also with the login
+  or `~/.codex` missing (`ok: false`); without `agy` installed, `agy.sh` prints
+  `skip: true`.
 - The panel shows a row per provider and machine, with bars matching the
   scripts' percentages and the reset clock in local time.
 - A script that prints invalid JSON shows a one-line error on its row while the
