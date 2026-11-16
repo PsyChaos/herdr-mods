@@ -315,7 +315,7 @@ export default class UsageBoard extends View {
       .gap(6)
       .items_center()
       .text_size(10)
-      .child(div().w(34).flex_none().truncate().text_color(t.muted).child(SHORT[w.id] ?? w.label ?? w.id ?? "?"))
+      .child(div().w(44).flex_none().truncate().text_color(t.muted).child(SHORT[w.id] ?? w.label ?? w.id ?? "?"))
       .child(bar)
       .child(div().w(34).flex_none().text_color(stale ? t.muted : color).child(percentText(w.used_percent)))
       .child(div().w(46).flex_none().truncate().text_color(t.dim).child(resetShort(w.resets_at)));

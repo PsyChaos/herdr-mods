@@ -1,7 +1,7 @@
 #!/bin/sh
 # Codex usage limits -> one JSON line per CONTRACT.md.
 # Reads the newest token_count event carrying rate_limits from the newest
-# session JSONL files under ~/.codex/sessions/YYYY/MM/DD/. Read-only.
+# session JSONL files under ${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/. Read-only.
 python3 - <<'PYEOF'
 import json, os, sys
 from datetime import datetime, timezone
@@ -19,17 +19,20 @@ def norm_z(s):
         s = s.split(".", 1)[0]
     return s + "Z"
 
+home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+root = os.path.join(home, "sessions")
+shown = root.replace(os.path.expanduser("~"), "~", 1)
+
 def fail(msg):
     print(json.dumps({
         "provider": "codex", "label": "Codex", "ok": False,
         "plan": None, "windows": [], "updated_at": None,
-        "source": "~/.codex/sessions JSONL rate_limits", "error": msg,
+        "source": shown + " JSONL rate_limits", "error": msg,
     }))
     sys.exit(0)
 
-root = os.path.expanduser("~/.codex/sessions")
 if not os.path.isdir(root):
-    fail("~/.codex/sessions not found")
+    fail(shown + " not found")
 
 # Candidate files: newest .jsonl by mtime, deepest first.
 cands = []
@@ -42,7 +45,7 @@ for dirpath, _dirs, files in os.walk(root):
             except OSError:
                 pass
 if not cands:
-    fail("no .jsonl session files under ~/.codex/sessions")
+    fail("no .jsonl session files under " + shown)
 cands.sort(reverse=True)
 cands = cands[:12]
 
@@ -50,6 +53,7 @@ cands = cands[:12]
 hit = None
 for _mt, path in cands:
     try:
+        last = None
         with open(path, "rb") as fh:
             # Keep the LAST usable record per file: records with limit_id
             # "premium" carry null primary/secondary and must not shadow
@@ -119,8 +123,7 @@ out = {
     "plan": plan if isinstance(plan, str) and plan else None,
     "windows": windows,
     "updated_at": norm_z(hit["ts"]),
-    "source": os.path.basename(os.path.dirname(os.path.dirname(hit["path"]))) +
-              "/" + os.path.basename(hit["path"]),
+    "source": os.path.basename(home.rstrip("/")) + "/" + os.path.basename(hit["path"]),
     "error": None,
 }
 print(json.dumps(out))
