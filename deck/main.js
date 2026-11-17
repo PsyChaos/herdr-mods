@@ -112,7 +112,13 @@ export default class Deck extends View {
     const names = Object.keys(this.up).filter((n) => n !== "here").sort();
     return h_flex().h(36).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border).bg(t.chrome)
       .child(div().flex_none().font_semibold().text_size(13).text_color(t.foreground).child("deck"))
-      .children(["here", ...names].map((n) => chip(n, this.up[n] ?? true)));
+      .children(["here", ...names].map((n) => chip(n, this.up[n] ?? true)))
+      .child(div().flex_1())
+      .child(div().id("deck-close").flex_none().w(22).h(22).flex().items_center().justify_center().rounded(5).cursor_pointer()
+        .text_size(13).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click(() => closeOverlay(props()?.overlay))
+        .child("✕"));
   }
 
   tabs(t, mono) {
