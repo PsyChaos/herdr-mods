@@ -1,0 +1,190 @@
+// Deck's Swarm tab: every swarm run on every Herdr machine, one box per open
+// run with a table of its tasks, and a box of the latest served runs.
+// Data: board.json (written by `swarm`), read each tick; who is doing what
+// right now comes from terminals(), which Herdr keeps current.
+
+import { div } from "gpui-kit";
+import { v_flex, h_flex } from "gpui-base";
+import { exec, readTextFile, terminals, agents, theme, settings, home, knownAgents } from "herdr";
+import { model, mergeBoards, providerKey, shortModel, duration, EFFORT } from "../swarm-model.js";
+import { box, table, rail, glyph, dot } from "../ui.js";
+
+const STATE_DIR = 'printf %s "${SWARM_STATE:-$HOME/.local/state/herdr-swarm}"';
+const STATION = { claude: "claude", codex: "codex", antigravity: "antigravity" };
+
+const programs = new Map(); // provider key -> Program, for glyphs
+let programsAsked = false;
+
+// Live terminals: address -> {status, name, msg}. The reported status of an
+// agent wins over the terminal's own.
+function liveMap() {
+  const reported = new Map(agents().map((a) => [a.address, a.status]));
+  const live = new Map();
+  for (const x of terminals()) {
+    if (x.state !== "live") continue;
+    const msg = x.report && typeof x.report === "object" && typeof x.report.msg === "string" ? x.report.msg : null;
+    live.set(x.address, { status: reported.get(x.address) ?? x.status ?? "idle", name: x.name ?? null, msg });
+  }
+  return live;
+}
+
+const modelOf = (state) => model(state.runs, liveMap(), Date.now());
+const text = (v) => (typeof v === "number" ? duration(v) : v ?? "");
+const age = (run) => (Date.parse(run.created) ? duration(Date.now() - Date.parse(run.created)) : "");
+
+// board.json's path on a machine; null while it can't be resolved (tried again next tick).
+async function pathOn(state, machine) {
+  const key = machine ?? "";
+  if (state.paths.has(key)) return state.paths.get(key);
+  try {
+    const r = await exec("sh", ["-c", STATE_DIR], machine ? { on: machine } : {});
+    if (r.code !== 0 || !r.stdout.startsWith("/")) throw new Error("no path");
+    const path = `${r.stdout.replace(/\/+$/, "")}/board.json`;
+    state.paths.set(key, path);
+    return path;
+  } catch {
+    if (!machine) { // this computer always has a default
+      const path = `${home()}/.local/state/herdr-swarm/board.json`;
+      state.paths.set(key, path);
+      return path;
+    }
+    return null;
+  }
+}
+
+export default {
+  id: "swarm",
+  label: "swarm",
+  icon: "🍳",
+
+  async load(ctx) {
+    const state = ctx.state ?? { texts: new Map(), boards: new Map(), paths: new Map(), runs: [] };
+    if (!programsAsked) {
+      programsAsked = true;
+      knownAgents().then((known) => known.forEach((p) => programs.set(providerKey(p.key), p))).catch(() => { programsAsked = false; });
+    }
+    const where = ctx.board ? [null] : ctx.machines; // [null, ...names]
+    const status = {};
+    let changed = false;
+    await Promise.all(where.map(async (machine) => {
+      const key = machine ?? "";
+      status[machine ?? "here"] = "ok";
+      let body = null;
+      try {
+        const path = ctx.board ?? (await pathOn(state, machine));
+        if (!path) throw new Error("machine not ready");
+        body = await readTextFile(path, machine ? { on: machine } : {});
+      } catch {
+        status[machine ?? "here"] = "error";
+        return; // keep what we had
+      }
+      if (state.texts.has(key) && state.texts.get(key) === body) return;
+      changed = true;
+      state.texts.set(key, body);
+      if (body == null) return void state.boards.delete(key);
+      try {
+        state.boards.set(key, JSON.parse(body));
+      } catch {
+        // Written atomically, so this is rare: keep the last good board.
+      }
+    }));
+    // A machine that went away takes its runs with it.
+    for (const key of [...state.texts.keys()]) {
+      if (where.some((m) => (m ?? "") === key)) continue;
+      changed = true;
+      state.texts.delete(key);
+      state.boards.delete(key);
+      state.paths.delete(key);
+    }
+    if (changed) state.runs = mergeBoards(state.boards).runs;
+    return { state, changed, machines: status };
+  },
+
+  rows(state) {
+    if (!state) return [];
+    const m = modelOf(state);
+    return [
+      ...m.open.flatMap((o) => o.rows.map((r) => ({ key: r.key, target: r.target ?? null }))),
+      ...m.served.map((s) => ({ key: s.key, target: s.pr ? { url: s.pr } : null })),
+    ];
+  },
+
+  count(state) {
+    return state ? modelOf(state).open.flatMap((o) => o.rows).filter((r) => ["cooking", "review", "fixing", "needs you"].includes(r.state)).length : 0;
+  },
+
+  blocked(state) {
+    return state ? modelOf(state).open.some((o) => o.rows.some((r) => r.state === "needs you")) : false;
+  },
+
+  view(state, sel, cx, pick) {
+    const t = theme();
+    const mono = settings().font_family ?? "JetBrains Mono";
+    const m = state ? modelOf(state) : { open: [], served: [] };
+    if (m.open.length + m.served.length === 0) {
+      return v_flex().flex_1().items_center().justify_center().gap(6)
+        .child(div().text_size(15).text_color(t.muted).child("No swarm runs."))
+        .child(div().text_size(11).text_color(t.dim).child("Start one with `swarm new`."));
+    }
+    const color = (c) => (c === "ansi1" ? t.ansi1 ?? t.blocked : t[c] ?? t.muted);
+    const columns = [
+      { label: "id", w: 30, mono: true },
+      { label: "task" },
+      { label: "worker", w: 120 },
+      { label: "model", w: 84, mono: true },
+      { label: "stage", w: 56 },
+      { label: "state", w: 72 },
+      { label: "doing now", w: 250 },
+      { label: "time", w: 40, mono: true },
+    ];
+    const runBox = ({ run, chef, rows }) => {
+      const head = chef && (chef.name || chef.msg)
+        ? h_flex().px(10).h(22).gap(8).items_center().text_size(11)
+          .child(div().flex_none().font_family(mono).text_color(t.dim).child(`chef ${chef.name ?? ""}`))
+          .child(div().min_w(0).truncate().text_color(t.muted).child(chef.msg ?? ""))
+        : null;
+      const body = table(t, columns, rows.map((r) => {
+        const c = color(r.color);
+        const program = programs.get(providerKey(r.worker.provider));
+        const pic = glyph(t, program, 11);
+        const who = r.worker.name ?? (STATION[providerKey(r.worker.provider)] ?? r.worker.provider ?? "?");
+        const effort = EFFORT?.[r.worker.effort] ?? r.worker.effort ?? "";
+        const doing = r.doing ? `${r.doing.who ? `${r.doing.who}: ` : ""}${r.doing.msg}` : "";
+        return {
+          key: r.key,
+          cells: [
+            r.id, r.title,
+            h_flex().gap(4).items_center().min_w(0).when(Boolean(pic), (el) => el.child(pic)).child(div().truncate().child(who)),
+            [shortModel(r.worker.model), effort].filter(Boolean).join("·"),
+            rail(t, r.stage, c),
+            div().truncate().text_color(c).when(r.state === "needs you" || r.state === "sent back", (el) => el.font_semibold()).child(r.state),
+            div().truncate().text_color(t.muted).child(doing),
+            text(r.elapsed),
+          ],
+          onClick: () => pick(r.key),
+          under: r.findings?.length
+            ? v_flex().pl(40).pr(10).pb(3).children(r.findings.map((f) =>
+              h_flex().h(18).gap(10).text_size(10.5).items_center()
+                .child(div().w(56).flex_none().text_color(f.severity === "high" ? color("ansi1") : t.muted).child(f.severity))
+                .child(div().w(190).flex_none().truncate().font_family(mono).text_color(t.dim).child(f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""))
+                .child(div().min_w(0).flex_1().truncate().text_color(t.muted).child(f.issue ?? ""))))
+            : null,
+        };
+      }), sel, mono);
+      return box(t, run.title ?? run.id, [run.repo_name, run.base, run.host, age(run)].filter(Boolean).join(" · "), [head, body].filter(Boolean));
+    };
+    const served = m.served.length
+      ? box(t, "served", `${m.served.length} latest`, m.served.map((s) =>
+        h_flex().id(`row-${s.key}`).h(24).px(10).gap(10).items_center().text_size(11.5)
+          .when(s.key === sel, (el) => el.bg(t.hover))
+          .when(Boolean(s.pr), (el) => el.cursor_pointer().on_click(() => pick(s.key)))
+          .child(dot(t, t.done))
+          .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.title ?? ""))
+          .child(div().flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(`${s.count} tasks`))
+          .child(div().w(50).flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(text(s.duration)))
+          .child(div().w(40).flex_none().font_family(mono).text_size(10.5).text_color(t.accent).child(s.pr ? `#${String(s.pr).match(/(\d+)\/?$/)?.[1] ?? "PR"} ↗` : ""))))
+      : null;
+    return v_flex().id("swarm-body").flex_1().min_h(0).pb(12).overflow_y_scrollbar()
+      .children(m.open.map(runBox)).children(served ? [served] : []);
+  },
+};

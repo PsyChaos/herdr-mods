@@ -11,6 +11,7 @@ agents at once.
 | [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
 | [`docker`](docker/) | **Docker.** The containers of every Herdr machine in one list, by compose project. Search them, show only running or stopped ones, start, stop and restart them, and open their live logs or a shell in them as a terminal. |
 | [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and how many Docker containers run there, with a link to the Docker panel. |
+| [`deck`](deck/) | **Deck.** One console window with a tab per subject. Its Swarm tab shows every swarm task on every Herdr machine: who works on it, what they are doing now, its stage and why a review sent it back. Keyboard first (`j`/`k`, Enter, `1`..`9`). |
 | [`attach`](attach/) | **Add files.** Pick files, or drop them on its window, and they go into an agent's input as paths: images arrive attached like a pasted one. For an agent on another machine the files are sent there first. |
 | [`team`](team/) | **Agent team.** Agents in one repository, on one branch or in different worktrees, message each other with the `herdr-team` command. The window shows who works where, the files each worktree changed, clashes, and what the agents said; "Introduce" tells them about each other. |
 | [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these panels and any mod you gave a key, with their keys. |
@@ -26,7 +27,7 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/docker herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/team herdr-mods/palette-plus ~/.config/herdr-app/mods/
+cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/docker herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/team herdr-mods/palette-plus herdr-mods/deck ~/.config/herdr-app/mods/
 ~/.config/herdr-app/mods/palette-plus/sync.sh
 herdr-app check ~/.config/herdr-app/mods/task-board
 herdr-app check ~/.config/herdr-app/mods/usage-board
@@ -37,6 +38,7 @@ herdr-app check ~/.config/herdr-app/mods/ci
 herdr-app check ~/.config/herdr-app/mods/machines
 herdr-app check ~/.config/herdr-app/mods/attach
 herdr-app check ~/.config/herdr-app/mods/team
+herdr-app check ~/.config/herdr-app/mods/deck
 install -m 755 herdr-mods/team/herdr-team ~/.local/bin/ && herdr-team setup   # on every Herdr machine
 herdr-app check ~/.config/herdr-app/mods/palette-plus
 ```
@@ -62,14 +64,15 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
   "ctrl-shift-m": "mod.open:machines",
   "ctrl-shift-a": "mod.open:attach",
   "ctrl-shift-d": "mod.open:team",
-  "ctrl-shift-p": "mod.open:palette-plus"
+  "ctrl-shift-p": "mod.open:palette-plus",
+  "ctrl-shift-i": "mod.open:deck"
 }
 ```
 
 `Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
 anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
 asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+S` the Docker containers, `Ctrl+Shift+R` shows PRs and CI, and
-`Ctrl+Shift+M` the machines, `Ctrl+Shift+A` adds files to an agent, and `Ctrl+Shift+D` shows your agents by repository. `Ctrl+Shift+P` replaces Herdr's palette with one
+`Ctrl+Shift+M` the machines, `Ctrl+Shift+A` adds files to an agent, and `Ctrl+Shift+D` shows your agents by repository. `Ctrl+Shift+I` opens the Deck console. `Ctrl+Shift+P` replaces Herdr's palette with one
 that lists all of these.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
