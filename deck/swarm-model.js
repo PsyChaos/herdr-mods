@@ -9,6 +9,8 @@
 // Keys use "." for this machine, matching mergeBoards; served keys end in ":served".
 // mergeBoards(Map machine -> board) -> {runs, stats}; addressOn(machine, terminal),
 // providerKey(provider), shortModel(model), STAGES, EFFORT, duration(ms) are view helpers.
+// liveMap(terminals, agents) normalizes Herdr snapshots into model's live Map.
+// fixtureLive(boards) builds synthetic live entries from Map machine -> board for previews.
 
 export const STAGES = ["fire", "cook", "taste", "review", "pass"];
 
@@ -35,6 +37,32 @@ export function shortModel(model) {
 // A task's terminal as terminals() names it: remote ones carry their machine.
 export const addressOn = (machine, terminal) =>
   (!terminal ? null : machine && !terminal.includes("/") ? `${machine}/${terminal}` : terminal);
+
+export function liveMap(terminals, agents) {
+  const reported = new Map(agents.map((a) => [a.address, a.status]));
+  const live = new Map();
+  for (const terminal of terminals) {
+    if (terminal.state !== "live") continue;
+    const report = terminal.report;
+    live.set(terminal.address, {
+      status: reported.get(terminal.address) ?? terminal.status ?? "idle",
+      name: terminal.name ?? null,
+      msg: report && typeof report === "object" && typeof report.msg === "string" ? report.msg : null,
+    });
+  }
+  return live;
+}
+
+export function fixtureLive(boards) {
+  const live = new Map();
+  for (const [machine, board] of boards) for (const run of board?.runs ?? []) for (const task of run.tasks ?? []) {
+    if (task.terminal) live.set(addressOn(machine, task.terminal), { status: task.status });
+    for (const helper of task.helpers ?? []) {
+      if (helper.terminal) live.set(addressOn(machine, helper.terminal), { status: "working", msg: "Inspecting the change" });
+    }
+  }
+  return live;
+}
 
 // Every machine's board in one list. boards: Map machine key ("" here) ->
 // parsed board.json. A run is known by the machine it was read from plus its
@@ -90,7 +118,7 @@ function row(task, run, live, now) {
   }).filter((h) => ACTIVE.has(h.live?.status));
   const stage = task.stage ?? "fire";
   const state = stage === "dropped" ? "dropped"
-    : worker?.status === "blocked" || helpers.some((h) => h.live.status === "blocked") ? "needs you"
+    : (stage !== "pass" && worker?.status === "blocked") || helpers.some((h) => h.live.status === "blocked") ? "needs you"
     : stage === "sent_back" ? "sent back"
     : helpers.some((h) => h.role === "review" && h.live.status === "working") ? "review"
     : helpers.some((h) => h.role === "resolve" && h.live.status === "working") ? "fixing"
@@ -112,7 +140,7 @@ function row(task, run, live, now) {
     worker: { name: task.name || worker?.name || null, provider: task.provider, model: task.model, effort: task.effort },
     stage, state, color: COLORS[state], doing,
     elapsed: task.started ? duration((task.finished == null ? now : Date.parse(task.finished)) - Date.parse(task.started)) : "",
-    findings: state === "sent back"
+    findings: stage === "sent_back"
       ? (task.review?.items ?? (task.check?.problems ?? []).slice(0, 3).map((issue) => ({ severity: "check", issue }))).slice(0, 3)
       : [],
     target: targetOn(machine, terminal),
@@ -126,7 +154,7 @@ export function model(runs, live, now) {
     const chef = address ? { address, name: live.get(address)?.name || address,
       msg: message(live.get(address)), target: targetOn(run.machine, address) } : null;
     const rows = (run.tasks ?? []).map((task) => row(task, run, live, now));
-    rows.sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || String(a.id).localeCompare(String(b.id)));
+    rows.sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
     return { run, chef, rows };
   });
   const served = sorted.filter((r) => r.status !== "open").slice(0, 5).map((run) => {
