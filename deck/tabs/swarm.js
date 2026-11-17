@@ -6,7 +6,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, readTextFile, terminals, agents, theme, settings, home, knownAgents } from "herdr";
-import { model, mergeBoards, providerKey, shortModel, duration, EFFORT } from "../swarm-model.js";
+import { model, mergeBoards, liveMap, fixtureLive, providerKey, shortModel, duration, EFFORT } from "../swarm-model.js";
 import { box, table, rail, glyph, dot } from "../ui.js";
 
 const STATE_DIR = 'printf %s "${SWARM_STATE:-$HOME/.local/state/herdr-swarm}"';
@@ -15,20 +15,9 @@ const STATION = { claude: "claude", codex: "codex", antigravity: "antigravity" }
 const programs = new Map(); // provider key -> Program, for glyphs
 let programsAsked = false;
 
-// Live terminals: address -> {status, name, msg}. The reported status of an
-// agent wins over the terminal's own.
-function liveMap() {
-  const reported = new Map(agents().map((a) => [a.address, a.status]));
-  const live = new Map();
-  for (const x of terminals()) {
-    if (x.state !== "live") continue;
-    const msg = x.report && typeof x.report === "object" && typeof x.report.msg === "string" ? x.report.msg : null;
-    live.set(x.address, { status: reported.get(x.address) ?? x.status ?? "idle", name: x.name ?? null, msg });
-  }
-  return live;
-}
-
-const modelOf = (state) => model(state.runs, liveMap(), Date.now());
+// With the `board` prop (a fixture) nothing is live, so the board itself says who works.
+const modelOf = (state) =>
+  model(state.runs, state.fixture ? fixtureLive(state.boards) : liveMap(terminals(), agents()), Date.now());
 const text = (v) => (typeof v === "number" ? duration(v) : v ?? "");
 const age = (run) => (Date.parse(run.created) ? duration(Date.now() - Date.parse(run.created)) : "");
 
@@ -63,6 +52,7 @@ export default {
       programsAsked = true;
       knownAgents().then((known) => known.forEach((p) => programs.set(providerKey(p.key), p))).catch(() => { programsAsked = false; });
     }
+    state.fixture = Boolean(ctx.board);
     const where = ctx.board ? [null] : ctx.machines; // [null, ...names]
     const status = {};
     let changed = false;
