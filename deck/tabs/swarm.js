@@ -149,14 +149,14 @@ export default {
             rail(t, r.stage, c),
             div().truncate().text_color(c).when(r.state === "needs you" || r.state === "sent back", (el) => el.font_semibold()).child(r.state),
             div().truncate().text_color(t.muted).child(doing),
-            text(r.elapsed),
+            div().truncate().text_color(text(r.elapsed) ? t.foreground : t.dim).child(text(r.elapsed) || "-"),
           ],
           onClick: () => pick(r.key),
           under: r.findings?.length
             ? v_flex().pl(40).pr(10).pb(3).children(r.findings.map((f) =>
-              h_flex().h(18).gap(10).text_size(10.5).items_center()
+              h_flex().h(18).gap(8).text_size(10.5).items_center()
                 .child(div().w(56).flex_none().text_color(f.severity === "high" ? color("ansi1") : t.muted).child(f.severity))
-                .child(div().w(190).flex_none().truncate().font_family(mono).text_color(t.dim).child(f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""))
+                .child(div().flex_none().max_w(260).truncate().font_family(mono).text_color(t.dim).child(f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""))
                 .child(div().min_w(0).flex_1().truncate().text_color(t.muted).child(f.issue ?? ""))))
             : null,
         };
@@ -170,8 +170,8 @@ export default {
           .when(Boolean(s.pr), (el) => el.cursor_pointer().on_click(() => pick(s.key)))
           .child(dot(t, t.done))
           .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.title ?? ""))
-          .child(div().flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(`${s.count} tasks`))
-          .child(div().w(50).flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(text(s.duration)))
+          .child(div().flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(`${s.count} ${s.count === 1 ? "task" : "tasks"}`))
+          .child(div().w(50).flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(text(s.duration) || "-"))
           .child(div().w(40).flex_none().font_family(mono).text_size(10.5).text_color(t.accent).child(s.pr ? `#${String(s.pr).match(/(\d+)\/?$/)?.[1] ?? "PR"} ↗` : ""))))
       : null;
     return v_flex().id("swarm-body").flex_1().min_h(0).pb(12).overflow_y_scrollbar()
