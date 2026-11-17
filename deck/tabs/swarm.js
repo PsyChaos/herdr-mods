@@ -73,7 +73,9 @@ export default {
         body = await readTextFile(path, machine ? { on: machine } : {});
       } catch {
         status[machine ?? "here"] = "error";
-        if (state.texts.delete(key) || state.boards.delete(key)) changed = true; // no stale runs
+        const a = state.texts.delete(key); // both deletes: no stale runs
+        const b = state.boards.delete(key);
+        if (a || b) changed = true;
         return;
       }
       if (state.texts.has(key) && state.texts.get(key) === body) return;
