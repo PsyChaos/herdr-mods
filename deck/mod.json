@@ -1,0 +1,5 @@
+{
+  "place": "none",
+  "title": "Deck",
+  "overlay": { "kind": "window", "key": "deck", "keep": true, "width": 980, "height": 620 }
+}
