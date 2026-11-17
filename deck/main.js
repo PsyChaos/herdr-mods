@@ -86,6 +86,7 @@ export default class Deck extends View {
   }
 
   pick(key) {
+    this.h.focus();
     this.sel[TABS[this.active].id] = key;
     this.go(this.rowsOf(TABS[this.active]).find((r) => r.key === key));
   }
@@ -118,7 +119,8 @@ export default class Deck extends View {
     return h_flex().h(32).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border).children(TABS.map((tab, i) => {
       const s = this.state[tab.id];
       return h_flex().id(`tab-${tab.id}`).h(24).px(10).gap(6).items_center().rounded(6).cursor_pointer().text_size(12)
-        .on_click((_e, cx) => { this.active = i; cx.notify(); })
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click((_e, cx) => { this.h.focus(); this.active = i; cx.notify(); })
         .when(i === this.active, (el) => el.bg(t.hover).text_color(t.foreground))
         .when(i !== this.active, (el) => el.text_color(t.muted))
         .child(tab.icon).child(tab.label)
@@ -137,6 +139,6 @@ export default class Deck extends View {
       .size_full().bg(t.canvas).text_color(t.foreground).text_size(12)
       .child(this.header(t))
       .child(this.tabs(t, mono))
-      .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key) => { this.pick(key); cx.notify(); }));
+      .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }));
   }
 }

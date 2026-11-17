@@ -10,14 +10,21 @@ import { model, mergeBoards, liveMap, fixtureLive, providerKey, shortModel, dura
 import { box, table, rail, glyph, dot } from "../ui.js";
 
 const STATE_DIR = 'printf %s "${SWARM_STATE:-$HOME/.local/state/herdr-swarm}"';
-const STATION = { claude: "claude", codex: "codex", antigravity: "antigravity" };
 
 const programs = new Map(); // provider key -> Program, for glyphs
 let programsAsked = false;
 
 // With the `board` prop (a fixture) nothing is live, so the board itself says who works.
-const modelOf = (state) =>
-  model(state.runs, state.fixture ? fixtureLive(state.boards) : liveMap(terminals(), agents()), Date.now());
+// One model per render: count, blocked, rows and view share it for 100 ms.
+let memo = { state: null, at: 0, value: null };
+function modelOf(state) {
+  const now = Date.now();
+  if (memo.state !== state || now - memo.at > 100) {
+    const live = state.fixture ? fixtureLive(state.boards) : liveMap(terminals(), agents());
+    memo = { state, at: now, value: model(state.runs, live, now) };
+  }
+  return memo.value;
+}
 const text = (v) => (typeof v === "number" ? duration(v) : v ?? "");
 const age = (run) => (Date.parse(run.created) ? duration(Date.now() - Date.parse(run.created)) : "");
 
@@ -50,7 +57,7 @@ export default {
     const state = ctx.state ?? { texts: new Map(), boards: new Map(), paths: new Map(), runs: [] };
     if (!programsAsked) {
       programsAsked = true;
-      knownAgents().then((known) => known.forEach((p) => programs.set(providerKey(p.key), p))).catch(() => { programsAsked = false; });
+      knownAgents().then((known) => known.forEach((p) => programs.set(providerKey(p.key), p))).catch(() => {});
     }
     state.fixture = Boolean(ctx.board);
     const where = ctx.board ? [null] : ctx.machines; // [null, ...names]
@@ -66,7 +73,8 @@ export default {
         body = await readTextFile(path, machine ? { on: machine } : {});
       } catch {
         status[machine ?? "here"] = "error";
-        return; // keep what we had
+        if (state.texts.delete(key) || state.boards.delete(key)) changed = true; // no stale runs
+        return;
       }
       if (state.texts.has(key) && state.texts.get(key) === body) return;
       changed = true;
@@ -95,7 +103,7 @@ export default {
     const m = modelOf(state);
     return [
       ...m.open.flatMap((o) => o.rows.map((r) => ({ key: r.key, target: r.target ?? null }))),
-      ...m.served.map((s) => ({ key: s.key, target: s.pr ? { url: s.pr } : null })),
+      ...m.served.map((s) => ({ key: s.key, target: s.target })),
     ];
   },
 
@@ -128,17 +136,17 @@ export default {
       { label: "time", w: 40, mono: true },
     ];
     const runBox = ({ run, chef, rows }) => {
-      const head = chef && (chef.name || chef.msg)
+      const head = chef?.name
         ? h_flex().px(10).h(22).gap(8).items_center().text_size(11)
-          .child(div().flex_none().font_family(mono).text_color(t.dim).child(`chef ${chef.name ?? ""}`))
+          .child(div().flex_none().font_family(mono).text_color(t.dim).child(`chef ${chef.name}`))
           .child(div().min_w(0).truncate().text_color(t.muted).child(chef.msg ?? ""))
         : null;
       const body = table(t, columns, rows.map((r) => {
         const c = color(r.color);
         const program = programs.get(providerKey(r.worker.provider));
         const pic = glyph(t, program, 11);
-        const who = r.worker.name ?? (STATION[providerKey(r.worker.provider)] ?? r.worker.provider ?? "?");
-        const effort = EFFORT?.[r.worker.effort] ?? r.worker.effort ?? "";
+        const who = r.worker.name ?? providerKey(r.worker.provider) ?? "?";
+        const effort = EFFORT[r.worker.effort] ?? r.worker.effort ?? "";
         const doing = r.doing ? `${r.doing.who ? `${r.doing.who}: ` : ""}${r.doing.msg}` : "";
         return {
           key: r.key,
@@ -146,12 +154,12 @@ export default {
             r.id, r.title,
             h_flex().gap(4).items_center().min_w(0).when(Boolean(pic), (el) => el.child(pic)).child(div().truncate().child(who)),
             [shortModel(r.worker.model), effort].filter(Boolean).join("·"),
-            rail(t, r.stage, c),
+            rail(t, r.stage, c, run.tasks?.find((x) => x.id === r.id)?.stages),
             div().truncate().text_color(c).when(r.state === "needs you" || r.state === "sent back", (el) => el.font_semibold()).child(r.state),
             div().truncate().text_color(t.muted).child(doing),
             div().truncate().text_color(text(r.elapsed) ? t.foreground : t.dim).child(text(r.elapsed) || "-"),
           ],
-          onClick: () => pick(r.key),
+          onClick: (_e, cx) => pick(r.key, cx),
           under: r.findings?.length
             ? v_flex().pl(40).pr(10).pb(3).children(r.findings.map((f) =>
               h_flex().h(18).gap(8).text_size(10.5).items_center()
@@ -167,7 +175,7 @@ export default {
       ? box(t, "served", `${m.served.length} latest`, m.served.map((s) =>
         h_flex().id(`row-${s.key}`).h(24).px(10).gap(10).items_center().text_size(11.5)
           .when(s.key === sel, (el) => el.bg(t.hover))
-          .when(Boolean(s.pr), (el) => el.cursor_pointer().on_click(() => pick(s.key)))
+          .when(Boolean(s.pr), (el) => el.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => pick(s.key, cx)))
           .child(dot(t, t.done))
           .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.title ?? ""))
           .child(div().flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(`${s.count} ${s.count === 1 ? "task" : "tasks"}`))

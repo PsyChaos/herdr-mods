@@ -20,10 +20,10 @@ export function box(t, title, right, children) {
     .children(children);
 }
 
-// Five 6px pips FIRE..PASS. dropped: all dim; sent_back: reached pips in `color`
-// up to REVIEW (the board keeps no stage history here).
-export function rail(t, stage, color) {
-  const reached = stage === "dropped" ? -1 : stage === "sent_back" ? 3 : STAGES.indexOf(stage);
+// Five 6px pips FIRE..PASS. dropped: all dim. Reached = the current stage or
+// any stage the task ever reached (`stages`, the task's history, as the Pass does).
+export function rail(t, stage, color, stages) {
+  const reached = Math.max(0, STAGES.indexOf(stage), ...STAGES.map((s, i) => (stages?.[s] ? i : -1)));
   return h_flex().flex_none().gap(3).items_center().tooltip(STAGES.join(" · ").toUpperCase())
     .children(STAGES.map((_, i) =>
       stage === "dropped" ? dot(t, t.dim, 6).opacity(0.5)
@@ -40,10 +40,10 @@ export function glyph(t, program, size = 12) {
 }
 
 // columns: [{label, w (px; omit to share the rest), mono}]. rows: [{key, cells:
-// [string | element], color (a cell's text color), under: element | null, onClick}].
+// [string | element], under: element | null, onClick}].
 export function table(t, columns, rows, selectedKey, mono) {
-  const cell = (c, content, color) => {
-    const el = div().min_w(0).truncate().text_size(11.5).text_color(color ?? t.foreground);
+  const cell = (c, content) => {
+    const el = div().min_w(0).truncate().text_size(11.5).text_color(t.foreground);
     if (c.mono) el.font_family(mono).text_size(11);
     (c.w ? el.w(c.w).flex_none() : el.flex_1()).child(content ?? "");
     return el;
@@ -55,8 +55,8 @@ export function table(t, columns, rows, selectedKey, mono) {
   return v_flex().child(head).children(rows.map((r) => {
     const line = h_flex().id(`row-${r.key}`).h(24).px(10).gap(8).items_center()
       .when(r.key === selectedKey, (el) => el.bg(t.hover))
-      .when(Boolean(r.onClick), (el) => el.cursor_pointer().on_click(r.onClick))
-      .children(columns.map((c, i) => cell(c, r.cells[i], c.colorCell ? r.color : null)));
+      .when(Boolean(r.onClick), (el) => el.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(r.onClick))
+      .children(columns.map((c, i) => cell(c, r.cells[i])));
     return r.under ? v_flex().child(line).child(r.under) : line;
   }));
 }
