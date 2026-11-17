@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "generated_at": "2026-11-18T12:00:00Z",
+  "host": "fixture",
+  "runs": [
+    {
+      "id": "1118-deck-model",
+      "title": "Deck model and keyboard",
+      "repo_name": "herdr-mods",
+      "repo": "/example/herdr-mods",
+      "base": "main",
+      "status": "open",
+      "created": "2026-11-18T11:30:00Z",
+      "chef": "t0",
+      "pr": null,
+      "tasks": [
+        {
+          "id": "T1",
+          "title": "Board data contract",
+          "stage": "cook",
+          "name": "thor",
+          "terminal": "t1",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "working",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": null,
+          "helpers": []
+        },
+        {
+          "id": "T2",
+          "title": "Keyboard focus needs a decision",
+          "stage": "cook",
+          "name": "hawkeye",
+          "terminal": "t2",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "blocked",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": null,
+          "helpers": []
+        },
+        {
+          "id": "T3",
+          "title": "Terminal routing",
+          "stage": "sent_back",
+          "name": "hulk",
+          "terminal": "t3",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": null,
+          "helpers": [],
+          "review": {
+            "verdict": "changes",
+            "items": [
+              {
+                "severity": "high",
+                "file": "deck/main.js",
+                "line": 79,
+                "issue": "Qualify remote terminal addresses before focusing"
+              },
+              {
+                "severity": "medium",
+                "file": "deck/ui.js",
+                "line": 24,
+                "issue": "Keep the selection visible at narrow widths"
+              },
+              {
+                "severity": "low",
+                "file": null,
+                "line": null,
+                "issue": "Use the theme muted token for column headings"
+              }
+            ]
+          }
+        },
+        {
+          "id": "T4",
+          "title": "Model tests waiting for review",
+          "stage": "review",
+          "name": "wanda",
+          "terminal": "t4",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": "2026-11-18T11:55:00Z",
+          "helpers": []
+        },
+        {
+          "id": "T5",
+          "title": "Recipe and install notes",
+          "stage": "fire",
+          "name": null,
+          "terminal": "t5",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": null,
+          "helpers": []
+        }
+      ]
+    },
+    {
+      "id": "1118-deck-ui",
+      "title": "Deck shared components",
+      "repo_name": "herdr-mods",
+      "repo": "/example/herdr-mods",
+      "base": "main",
+      "status": "open",
+      "created": "2026-11-18T11:00:00Z",
+      "chef": "t0",
+      "pr": null,
+      "tasks": [
+        {
+          "id": "T6",
+          "title": "Review the shared table",
+          "stage": "review",
+          "name": "vision",
+          "terminal": "t6",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": null,
+          "helpers": [
+            {
+              "role": "review",
+              "terminal": "t60",
+              "name": "storm",
+              "provider": "claude",
+              "model": "claude-opus-5-5",
+              "started": "2026-11-18T11:50:00Z"
+            }
+          ]
+        },
+        {
+          "id": "T7",
+          "title": "Resolve integration conflict",
+          "stage": "pass",
+          "name": "strange",
+          "terminal": "t7",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": null,
+          "helpers": [
+            {
+              "role": "resolve",
+              "terminal": "t70",
+              "name": "loki",
+              "provider": "claude",
+              "model": "claude-opus-5-5",
+              "started": "2026-11-18T11:50:00Z"
+            }
+          ]
+        },
+        {
+          "id": "T8",
+          "title": "Provider glyphs",
+          "stage": "pass",
+          "name": "rocket",
+          "terminal": "t8",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": "2026-11-18T11:55:00Z",
+          "helpers": []
+        },
+        {
+          "id": "T9",
+          "title": "Superseded overlay option",
+          "stage": "dropped",
+          "name": "groot",
+          "terminal": "t9",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": "2026-11-18T11:55:00Z",
+          "helpers": []
+        }
+      ]
+    },
+    {
+      "id": "1117-theme",
+      "title": "Theme tokens",
+      "repo_name": "herdr-mods",
+      "repo": "/example/herdr-mods",
+      "base": "main",
+      "status": "closed",
+      "created": "2026-11-17T14:00:00Z",
+      "chef": "t0",
+      "pr": "https://github.com/eklektik/herdr-mods/pull/318",
+      "tasks": [
+        {
+          "id": "T10",
+          "title": "Theme tokens",
+          "stage": "pass",
+          "name": "gamora",
+          "terminal": "t10",
+          "provider": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "status": "done",
+          "started": "2026-11-18T11:40:00Z",
+          "finished": "2026-11-17T15:45:00Z",
+          "helpers": []
+        }
+      ]
+    }
+  ],
+  "stats": []
+}
