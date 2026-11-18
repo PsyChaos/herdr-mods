@@ -19,7 +19,7 @@ Herdr mono font with the look of herdwatch (colors from the theme only):
   right side `repo · base · machine · age`). First line: `chef <name>` and its
   report. Then a table: id, task, worker, model·effort, stage rail, state (dot
   and word), "doing now", time. A sent-back row has up to three findings under
-  it. A `served` panel lists the 5 newest closed runs; its rows open the PR.
+  it. A `served` panel lists the 5 newest closed runs with their PR state (`merged`, `pr open`, `closed`, `no pr`, `pr ?`; from `gh`, open PRs first); its rows open the PR.
   With no open run: "No open run. Start one with swarm new." above `served`.
 - State colors: `needs you` blocked, `sent back` ansi1 (else blocked),
   `review`/`fixing`/`cooking` working, `plated` done, `checked` muted,
@@ -32,6 +32,11 @@ Herdr mono font with the look of herdwatch (colors from the theme only):
 `1`..`9` and `tab`/`shift-tab` pick a tab; `escape` closes. Clicking the
 window gives it the keyboard back. The selection follows the row's key, not
 its position; when the row is gone it moves to the row now at that place.
+
+Search: `/` (or a click on the field at the right of the tab strip) starts it;
+typed characters build the query, backspace edits, `enter` keeps the filter,
+`escape` clears it and leaves search (another `escape` closes Deck). While
+typing, j/k/digits/tab are text.
 
 ## Data
 
@@ -61,11 +66,11 @@ deck/swarm-model.test.mjs`). Hidden prop `board`: a local file to read instead
 Create `tabs/<id>.js` exporting `{id, label, icon, load(ctx), count(state,
 probe), blocked(state, probe), rows(state, probe), view(state, sel, cx, pick,
 {range, probe, t})}` and add it to `TABS` in `main.js`. `icon` is a Lucide name
-(a file in `icons/`); `t` is `theme()`. `state` is `null` until the first load.
+(a file in `icons/`); `t` is `theme()`; `query` is the text of the search field (`""` when none): filter your rows and view by it, or ignore it. `state` is `null` until the first load.
 
 - `load({machines, state, board, probe})` -> `Promise<{state, machines: {name:
   "ok" | "error"}}>` (`machines` is `[null, ...names]`; `here` stands for `null`).
-- `rows(state, probe)` -> `[{key, target}]` in display order; `target` is
+- `rows(state, probe, query)` -> `[{key, target}]` in display order; `target` is
   `{url}`, `{tab: id}` (switch to that tab), an address string, or `{terminal,
   machine}`.
 - `view` draws with `ui.js` only (each export takes the theme first): `mono`,

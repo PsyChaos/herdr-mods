@@ -254,6 +254,25 @@ Same data and model. View changes only: `panel` instead of `box`, mono,
 state dots as in Agents, the stage rail kept. With no open run: one dim line
 `No open run. Start one with swarm new.` and the served panel below it.
 
+### Search and PR state
+
+- **PR state.** Each served run with a `pr` URL gets `pr_state`: `merged`,
+  `pr open`, `closed`, `no pr` or `pr ?` (not known yet), shown with a dot
+  (done, working, ansi1, dim). `swarm.js` asks `gh pr view <url> --json state`
+  in the background (never awaited by the tick; at most 3 calls per tick, the
+  newest 20 closed runs): MERGED and CLOSED are final, OPEN is asked again after
+  60 s, a failed call keeps the old value and retries after 60 s.
+  `model(runs, live, now, prState, query)` takes a url -> state map. Open runs
+  stay on top; in served, runs with an open PR come first, then newest first.
+- **Search.** `/` or a click on the field at the right of the tab strip starts
+  it; typed text builds `query`, `enter` keeps the filter, `escape` clears it
+  and leaves search (another closes Deck). Tabs get `query` in `view` and
+  `rows`. Swarm matches case-insensitively over run title, repo, id, task
+  id/title, worker name, provider and model (every word must match); a run that
+  matches only through tasks shows just those tasks. With a query, served
+  searches all closed runs and shows up to 20. Overview ignores the query;
+  Agents filtering comes with the Agents tab.
+
 ## Alternatives Considered
 
 - **Install herdwatch itself next to Deck.** Gives the look at once, but it

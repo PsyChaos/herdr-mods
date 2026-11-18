@@ -16,15 +16,44 @@ let programsAsked = false;
 
 // With the `board` prop (a fixture) nothing is live, so the board itself says who works.
 // One model per render: count, blocked, rows and view share it for 100 ms.
-let memo = { state: null, at: 0, value: null };
-function modelOf(state) {
+let memo = { state: null, query: "", at: 0, value: null };
+function modelOf(state, query = "") {
   const now = Date.now();
-  if (memo.state !== state || now - memo.at > 100) {
+  if (memo.state !== state || memo.query !== query || now - memo.at > 100) {
     const live = state.fixture ? fixtureLive(state.boards) : liveMap(terminals(), agents());
-    memo = { state, at: now, value: model(state.runs, live, now) };
+    const known = new Map([...prs].filter(([, v]) => v.state).map(([url, v]) => [url, v.state]));
+    memo = { state, query, at: now, value: model(state.runs, live, now, known, query) };
   }
   return memo.value;
 }
+
+// PR state of served runs, asked of gh in the background: MERGED and CLOSED are final, OPEN is
+// asked again after a minute, a failed call keeps the old value and is retried after a minute.
+const PR_EVERY_MS = 60000;
+const PR_PER_TICK = 3;
+const PR_WATCHED = 20; // newest closed runs with a PR
+const prs = new Map(); // url -> {state, at, busy}
+function askPrs(runs) {
+  const now = Date.now();
+  const due = runs.filter((r) => r.status !== "open" && r.pr)
+    .sort((a, b) => (Date.parse(b.created) || 0) - (Date.parse(a.created) || 0)).slice(0, PR_WATCHED).map((r) => r.pr)
+    .filter((url, i, all) => all.indexOf(url) === i)
+    .filter((url) => {
+      const p = prs.get(url);
+      return !p || (!p.busy && p.state !== "MERGED" && p.state !== "CLOSED" && now - p.at > PR_EVERY_MS);
+    }).slice(0, PR_PER_TICK);
+  for (const url of due) {
+    const p = prs.get(url) ?? {};
+    prs.set(url, { ...p, busy: true, at: now });
+    exec("gh", ["pr", "view", url, "--json", "state", "-q", ".state"], { timeout: 5000 })
+      .then((r) => {
+        const state = r.stdout.trim();
+        prs.set(url, { state: r.code === 0 && ["MERGED", "OPEN", "CLOSED"].includes(state) ? state : p.state, at: Date.now() });
+      })
+      .catch(() => prs.set(url, { state: p.state, at: Date.now() }));
+  }
+}
+const prColor = (t, word) => (word === "merged" ? t.done : word === "pr open" ? t.working ?? t.ansi4 : word === "closed" ? t.ansi1 : t.dim);
 const text = (v) => (typeof v === "number" ? duration(v) : v ?? "");
 const age = (run) => (Date.parse(run.created) ? duration(Date.now() - Date.parse(run.created)) : "");
 
@@ -97,12 +126,13 @@ export default {
       state.paths.delete(key);
     }
     if (changed) state.runs = mergeBoards(state.boards).runs;
+    if (!state.fixture) askPrs(state.runs); // not awaited: the tick never waits for gh
     return { state, changed, machines: status };
   },
 
-  rows(state) {
+  rows(state, _probe, query) {
     if (!state) return [];
-    const m = modelOf(state);
+    const m = modelOf(state, query);
     return [
       ...m.open.flatMap((o) => o.rows.map((r) => ({ key: r.key, target: r.target ?? null }))),
       ...m.served.map((s) => ({ key: s.key, target: s.target })),
@@ -117,8 +147,8 @@ export default {
     return state ? modelOf(state).open.some((o) => o.rows.some((r) => r.state === "needs you")) : false;
   },
 
-  view(state, sel, cx, pick, { t }) {
-    const m = state ? modelOf(state) : { open: [], served: [] };
+  view(state, sel, cx, pick, { t, query }) {
+    const m = state ? modelOf(state, query) : { open: [], served: [] };
     const color = (c) => (c === "ansi1" ? t.ansi1 ?? t.blocked : t[c] ?? t.muted);
     const columns = [
       { label: "id", w: 30 },
@@ -167,17 +197,17 @@ export default {
       return panel(t, { id: `run-${run.id}`, icon: "layers", title: run.title ?? run.id, right: [run.repo_name, run.base, run.host, age(run)].filter(Boolean).join(" · "), body: [head, body].filter(Boolean) });
     };
     const served = m.served.length
-      ? panel(t, { id: "served", icon: "history", title: "served", accent: t.ansi2, right: `${m.served.length} latest`, body: m.served.map((s) =>
+      ? panel(t, { id: "served", icon: "history", title: "served", accent: t.ansi2, right: query ? `${m.served.length} found` : `${m.served.length} latest`, body: m.served.map((s) =>
         h_flex().id(`row-${s.key}`).h(24).px(10).gap(10).items_center().text_size(11.5)
           .when(s.key === sel, (el) => el.bg(t.hover))
           .when(Boolean(s.pr), (el) => el.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => pick(s.key, cx)))
-          .child(dot(t, t.done))
+          .child(h_flex().w(74).flex_none().gap(5).items_center().child(dot(t, prColor(t, s.pr_state))).child(div().truncate().text_color(t.muted).child(s.pr_state)))
           .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.title ?? ""))
           .child(div().flex_none().text_size(10.5).text_color(t.dim).child(`${s.count} ${s.count === 1 ? "task" : "tasks"}`))
           .child(div().w(50).flex_none().text_size(10.5).text_color(t.dim).child(text(s.duration) || "-"))
           .child(div().w(40).flex_none().text_size(10.5).text_color(t.accent).child(s.pr ? `#${String(s.pr).match(/(\d+)\/?$/)?.[1] ?? "PR"} ↗` : ""))) })
       : null;
-    const empty = m.open.length ? [] : [div().mx(12).mt(12).text_color(t.dim).child("No open run. Start one with swarm new.")];
+    const empty = m.open.length || query ? [] : [div().mx(12).mt(12).text_color(t.dim).child("No open run. Start one with swarm new.")];
     return v_flex().id("swarm-body").flex_1().min_h(0).pb(12).overflow_y_scrollbar()
       .children(empty).children(m.open.map(runBox)).children(served ? [served] : []);
   },

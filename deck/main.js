@@ -33,6 +33,8 @@ export default class Deck extends View {
     this.pos = {}; // tab id -> its position, to move on when the key is gone
     this.up = {}; // machine name ("here" for this computer) -> true reachable
     this.range = 60;
+    this.query = ""; // search text, passed to every tab
+    this.searching = false; // typing into the search field
     this.active = 0;
     this.h = cx.focus_handle();
     this.h.focus();
@@ -89,7 +91,7 @@ export default class Deck extends View {
 
   // Keeps the selected key; when it is gone, the row now at the old position.
   rowsOf(tab) {
-    const rows = tab.rows(this.state[tab.id], probes);
+    const rows = tab.rows(this.state[tab.id], probes, this.query);
     const key = this.sel[tab.id];
     if (!rows.some((r) => r.key === key)) {
       const i = Math.min(this.pos[tab.id] ?? 0, rows.length - 1);
@@ -130,10 +132,27 @@ export default class Deck extends View {
     this.go(this.rowsOf(TABS[this.active]).find((r) => r.key === key));
   }
 
+  // In search mode keys are text: escape clears, enter keeps the filter.
+  searchKey(e) {
+    const k = e.keystroke;
+    if (k === "escape") { this.query = ""; this.searching = false; } else if (k === "enter") this.searching = false;
+    else if (k === "backspace") this.query = this.query.slice(0, -1);
+    else if (e.key_char && !e.modifiers?.control && !e.modifiers?.alt && !e.modifiers?.cmd) this.query += e.key_char;
+    else return false;
+    return true;
+  }
+
   key(e, cx) {
     const k = e.keystroke;
     const n = TABS.length;
-    if (k === "j" || k === "down") this.move(1);
+    if (this.searching) {
+      if (!this.searchKey(e)) return;
+      cx.stop_propagation();
+      return void cx.notify();
+    }
+    if (k === "/") this.searching = true;
+    else if (k === "escape" && this.query) this.query = "";
+    else if (k === "j" || k === "down") this.move(1);
     else if (k === "k" || k === "up") this.move(-1);
     else if (k === "enter") this.go(this.rowsOf(TABS[this.active]).find((r) => r.key === this.sel[TABS[this.active].id]));
     else if (/^[1-9]$/.test(k)) this.active = Math.min(Number(k) - 1, n - 1);
@@ -166,8 +185,17 @@ export default class Deck extends View {
         .child("✕"));
   }
 
+  searchField(t) {
+    const text = this.searching ? ` / ${this.query}_` : this.query ? ` / ${this.query}` : "/ search";
+    return h_flex().id("deck-search").flex_none().h(22).px(8).items_center().rounded(5).border(1).cursor_pointer().text_size(11)
+      .border_color(this.searching ? t.ansi4 : t.border).text_color(this.query || this.searching ? t.foreground : t.dim)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { this.h.focus(); this.searching = true; cx.notify(); })
+      .child(text);
+  }
+
   tabs(t) {
-    return h_flex().h(32).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border).children(TABS.map((tab, i) => {
+    return h_flex().h(32).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border).children([...TABS.map((tab, i) => {
       const s = this.state[tab.id];
       const on = i === this.active;
       return h_flex().id(`tab-${tab.id}`).h(24).px(10).gap(6).items_center().rounded(6).cursor_pointer()
@@ -178,7 +206,7 @@ export default class Deck extends View {
         .child(icon(t, tab.icon, on ? t.ansi4 : t.dim)).child(tab.label)
         .child(div().text_size(11).text_color(t.dim).child(String(tab.count(s, probes))))
         .when(Boolean(tab.blocked(s, probes)), (el) => el.child(dot(t, t.blocked, 6)));
-    }));
+    }), div().flex_1(), this.searchField(t)]);
   }
 
   render(cx) {
@@ -190,6 +218,6 @@ export default class Deck extends View {
       .size_full().bg(t.canvas).text_color(t.foreground).text_size(12).font_family(mono())
       .child(this.header(t))
       .child(this.tabs(t))
-      .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t }));
+      .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t, query: this.query }));
   }
 }
