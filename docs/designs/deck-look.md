@@ -88,14 +88,14 @@ panel(t, {id, icon, title, accent = t.ansi4, right = "", body})
   // fieldset edge: corner, 4px line, icon + bold title in accent, line,
   // right text in dim, 4px line, corner; side and bottom borders; radius 8;
   // body: element or array; margin 12 px left/right, 10 px top.
-rowLabel(t, iconName, word)               // 54 px label column: icon + word, dim
+rowLabel(t, iconName, word)               // 66 px label column: icon + word, dim
 meter(t, percent, cells = 24, gradientName = "cpu")
   // 5x11 px cells, 2 px gap, lit cells band(...) of their own position, rest `hover`
 coreCells(t, percents)                    // one 11x11 cell per core, band("cpu", p)
 history(t, samples, color, {height = 70, max = 100})
   // full width: grid lines 25/50/75 % in hover, filled area (opacity .16) and
   // 1.3 px line, gaps at null, end dot; new code built from charts.js paths
-sparkline(t, samples, color, {width = 120, height = 14, max = 100})
+sparkline(t, samples, color, {width = 120, height = 16, max = 100})
   // fixed size, same paths without grid
 chip(t, name, health)                     // "ok" ansi2, "error" ansi1, "loading" dim dot
 segmented(t, {id, options: [label], selected, onSelect})
