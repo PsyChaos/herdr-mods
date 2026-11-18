@@ -1,7 +1,7 @@
 # Deck
 
 One console window for the herd: a header, a tab strip and the active tab's
-view. Tabs: **Overview**, **Agents**, **Swarm**; the other mods become tabs later.
+view. Tabs (keys `1`..`8`): **Overview**, **Agents**, **Swarm**, **Team**, **Usage**, **PRs**, **Ports**, **Docker**. Tabs not yet written show "Coming.".
 
 ## What you see
 
@@ -14,7 +14,6 @@ Herdr mono font with the look of herdwatch (colors from the theme only):
   when one failed, dim while loading.
 - A 32px tab strip: Lucide icon, label, count; the active tab sits in a rounded
   `hover` box; a `blocked` dot shows when something needs you.
-- Tabs: Overview, Agents (stubs "coming" until their files land) and Swarm.
 - Swarm: one panel per open run, newest first (title cut into the top border;
   right side `repo · base · machine · age`). First line: `chef <name>` and its
   report. Then a table: id, task, worker, model·effort, stage rail, state (dot
@@ -29,7 +28,7 @@ Herdr mono font with the look of herdwatch (colors from the theme only):
 
 `j`/`down`, `k`/`up` move the selection; `enter` goes to the row's terminal
 (`pane.focus` when it has a pane, else `terminal.peek`) or opens the PR;
-`1`..`9` and `tab`/`shift-tab` pick a tab; `escape` closes. Clicking the
+`1`..`8` and `tab`/`shift-tab` pick a tab; `escape` closes. Clicking the
 window gives it the keyboard back. The selection follows the row's key, not
 its position; when the row is gone it moves to the row now at that place.
 
@@ -40,7 +39,7 @@ typing, j/k/digits/tab are text.
 
 ## Data
 
-Every 4 s while open each tab loads and the view redraws (nothing runs while the
+Every 4 s while open each tab loads on its own (a slow tab never delays another) and the view redraws (nothing runs while the
 window is closed). Separately, every 5 s `probe.js` runs one `sh` script per
 machine (`exec ... {on}`, 3 s timeout) and keeps ring buffers of at most 120
 samples in module scope, so charts survive close and reopen. Pure functions
@@ -63,20 +62,38 @@ deck/swarm-model.test.mjs`). Hidden prop `board`: a local file to read instead
 
 ## Adding a tab
 
-Create `tabs/<id>.js` exporting `{id, label, icon, load(ctx), count(state,
-probe), blocked(state, probe), rows(state, probe, query), view(state, sel, cx, pick,
-{range, probe, t, query})}` and add it to `TABS` in `main.js`. `icon` is a Lucide name
-(a file in `icons/`); `t` is `theme()`; `query` is the text of the search field (`""` when none): filter your rows and view by it, or ignore it. `state` is `null` until the first load.
+Create `tabs/<id>.js` and add it to `TABS` in `main.js`:
 
-- `load({machines, state, board, probe})` -> `Promise<{state, machines: {name:
-  "ok" | "error"}}>` (`machines` is `[null, ...names]`; `here` stands for `null`).
-- `rows(state, probe, query)` -> `[{key, target}]` in display order; `target` is
-  `{url}`, `{tab: id}` (switch to that tab), an address string, or `{terminal,
-  machine}`.
-- `view` draws with `ui.js` only (each export takes the theme first): `mono`,
-  `icon`, `dot`, `band`, `panel`, `rowLabel`, `meter`, `coreCells`, `history`,
-  `sparkline`, `chip`, `segmented` (`selected` is an index), `table`, `num`,
-  `rail`, `glyph`. Call `pick(key, cx)` from a click.
+```js
+export default {
+  id, label, icon,                       // icon: a file name in icons/ without .svg (Lucide)
+  load({machines, state, board, probe}), // -> Promise<{state, machines: {name: "ok"|"error"}}>
+  count(state, probe), blocked(state, probe), rows(state, probe, query),
+  view(state, sel, cx, pick, {range, probe, t, query}),
+  ui,                                    // optional module-scope object, see below
+  watch(cx),                             // optional, see "The watcher branch"
+}
+```
+
+`t` is `theme()`; `query` is the search text (`""` when none): filter rows and view by it, or ignore it. `state` is `null` until the first load. `machines` is `[null, ...names]` (`null` = this computer).
+
+- `rows(state, probe, query)` -> `[{key, target}]` in display order; `target` is `{url}` (opened with `openUrl`), `{tab: id}`, an address string, or `{terminal, machine}`.
+- `view` draws with `ui.js` only (each export takes the theme first; colors only from its tokens): `mono`, `icon`, `dot`, `band`, `panel`, `rowLabel`, `meter`, `coreCells`, `history`, `sparkline`, `chip`, `segmented`, `table`, `num`, `rail`, `glyph`, and
+  - `rowButton(t, {id, icon, tooltip, color, hover, disabled, onPress})` 18x18 icon button at a row's end;
+  - `textButton(t, {id, label, primary, destructive, disabled, onPress})`;
+  - `chips(t, {id, options: [{label, count}], selected, onSelect(index, cx)})`;
+  - `confirm(t, dialog)` the dialog body Deck draws; `logView(t, lines, {height})`; `note(t, {text, level})`; `openUrl(url)` a detached opener.
+  Call `pick(key, cx)` from a row click.
+- **Cadence.** Deck calls `load` every 4 s. A tab with a slower cadence keeps its interval as a constant in its file and returns its cached state until then; a slow fetch runs in the background (module state) while `load` returns the cache at once.
+- **Machine chips.** Report `"error"` for a machine only when it cannot be reached (exec rejects). Tool problems (docker missing, gh not logged in) show inside the tab, never on the chip.
+- **UI state lives in module scope**, never in what `load` returns (a load in flight would overwrite it). A tab may export `ui`:
+  - `ui.dialog`: `null` or `{title, lines, action, destructive, onConfirm(cx), onCancel(cx)}`. Deck draws `confirm` over the body, sends Enter to `onConfirm` and Escape to `onCancel` (each sets `ui.dialog = null` itself) and swallows other keys.
+  - `ui.note`: `null` or `{text, level: "info"|"ok"|"warn"|"error", at}`; one line at the bottom for 8 s (`error` stays until the next note).
+  - `ui.query`: set by another tab, Deck copies it into the search field once and clears it.
+- **Opening on a tab.** On `init` Deck opens `shared("deck.tab")` (`{id, at}`) when `at` is under 10 s old, else the last tab used. Ask for a tab with `setShared("deck.tab", {id, at: Date.now()})`.
+- **The watcher branch.** With prop `watch: "<id>"` the window is a hidden watcher: `init` calls only that tab's `watch(cx)` and `render` returns an empty div; no tick, no probe.
+
+Tabs, each described in its own file: [overview](tabs/overview.md), [agents](tabs/agents.md), [swarm](tabs/swarm.md), [team](tabs/team.md), [usage](tabs/usage.md), [prs](tabs/prs.md), [ports](tabs/ports.md), [docker](tabs/docker.md) (written with each tab).
 
 ## Install
 

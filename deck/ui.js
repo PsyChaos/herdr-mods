@@ -3,7 +3,7 @@
 
 import { div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { settings } from "herdr";
+import { settings, exec } from "herdr";
 
 export const STAGES = ["fire", "cook", "taste", "review", "pass"];
 
@@ -163,3 +163,61 @@ export function table(t, columns, rows, selectedKey) {
     return r.under ? v_flex().child(line).child(r.under) : line;
   }));
 }
+
+// Detached, so the browser it may start doesn't belong to Herdr's exec (from ci).
+const OPEN_SH = 'command -v setsid >/dev/null && exec setsid -f "$0" "$1" >/dev/null 2>&1; exec "$0" "$1" >/dev/null 2>&1 &';
+export const openUrl = (url) => exec("sh", ["-c", OPEN_SH, "xdg-open", url]).catch(() => null);
+
+// 18x18 icon button at a row's end. A disabled one keeps its tooltip, to say why.
+export function rowButton(t, { id, icon: name, tooltip, color = t.dim, hover = t.foreground, disabled = false, onPress }) {
+  const frame = div().id(id).w(18).h(18).flex_none().flex().items_center().justify_center().rounded(4).tooltip(tooltip)
+    .child(icon(t, name, disabled ? t.border : color, 11));
+  if (disabled) return frame;
+  return frame.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .hover((s) => s.bg(t.hover).text_color(hover)).active((s) => s.bg(t.border))
+    .on_click((_e, cx) => { cx.stop_propagation(); onPress(cx); });
+}
+
+// Framed text button; primary is filled, destructive is red.
+export function textButton(t, { id, label, primary = false, destructive = false, disabled = false, onPress }) {
+  const accent = destructive ? t.ansi1 : t.ansi4;
+  const frame = h_flex().id(id).h(22).px(8).items_center().rounded(5).border(1).text_size(11).font_semibold().child(label);
+  if (disabled) return frame.border_color(t.border).text_color(t.dim);
+  const look = primary
+    ? frame.bg(accent).border_color(accent).text_color(t.background).hover((s) => s.opacity(0.85))
+    : frame.border_color(t.border).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.border));
+  return look.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); onPress(cx); });
+}
+
+// Filter pills with a count; options: [{label, count}]; selected: index; onSelect(index, cx).
+export function chips(t, { id, options, selected, onSelect }) {
+  return h_flex().id(id).gap(4).flex_wrap().children(options.map((o, i) => {
+    const on = i === selected;
+    return h_flex().id(`${id}-${i}`).h(20).px(8).gap(5).items_center().rounded(10).border(1).text_size(11).cursor_pointer()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => onSelect(i, cx))
+      .when(on, (el) => el.bg(t.ansi4).border_color(t.ansi4).text_color(t.background))
+      .when(!on, (el) => el.border_color(t.border).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)))
+      .child(o.label).when(Number.isFinite(o.count), (el) => el.child(String(o.count)));
+  }));
+}
+
+// The dialog body Deck draws over a tab; dialog is `ui.dialog` (Deck routes Enter and Escape).
+export function confirm(t, { title, lines = [], action, destructive = true, onConfirm, onCancel }) {
+  const body = v_flex().gap(8)
+    .child(v_flex().gap(2).children(lines.map((l) => div().text_color(t.muted).child(l))))
+    .child(h_flex().gap(8).justify_end().pt(4)
+      .child(textButton(t, { id: "dialog-cancel", label: "Cancel", onPress: (cx) => onCancel(cx) }))
+      .child(textButton(t, { id: "dialog-confirm", label: action, primary: true, destructive, onPress: (cx) => onConfirm(cx) })));
+  return div().w(460).child(panel(t, { id: "dialog", title, accent: destructive ? t.ansi1 : t.ansi4, body }));
+}
+
+// Monospace text, scrollable; the font is inherited from Deck.
+export const logView = (t, lines, { height = 220 } = {}) =>
+  v_flex().id("log-view").h(height).flex_none().p(8).rounded(5).bg(t.canvas).border(1).border_color(t.border)
+    .text_size(11).text_color(t.muted).overflow_y_scrollbar().children(lines.map((l) => div().child(l || " ")));
+
+// One line at the bottom of a tab, colored by level.
+export const note = (t, { text, level = "info" }) =>
+  h_flex().h(22).flex_none().px(12).items_center().border_t(1).border_color(t.border).text_size(11).truncate()
+    .text_color({ ok: t.ansi2, warn: t.ansi3, error: t.ansi1 }[level] ?? t.muted).child(text);
