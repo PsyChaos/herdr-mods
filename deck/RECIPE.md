@@ -96,6 +96,14 @@ export default {
 
 Tabs, each described in its own file: [overview](tabs/overview.md), [agents](tabs/agents.md), [swarm](tabs/swarm.md), [team](tabs/team.md), [usage](tabs/usage.md), [prs](tabs/prs.md), [ports](tabs/ports.md), [docker](tabs/docker.md) (written with each tab).
 
+## Window size
+
+The header's `S M L XL` control (and `+` / `-`) picks 980x620, 1200x760,
+1440x880 or 1720x980. Herdr opens a mod's window at the size its `mod.json`
+names, so Deck writes the chosen size into its installed `mod.json`, closes its
+window and opens it again with `mod.open` (same spot). Copying Deck over it
+again resets the size to `S`.
+
 ## One tab in a layout
 
 A layout block can show a single tab, without header, tab strip or search:
