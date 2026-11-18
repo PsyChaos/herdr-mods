@@ -4,13 +4,9 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, spaces, terminals, knownAgents } from "herdr";
+import { agents, spaces, terminals } from "herdr";
 import { build, summary, fmtMem, fmtCpu } from "../agents-model.js";
-import { providerKey } from "../swarm-model.js";
 import { panel, table, glyph, dot, sparkline, num } from "../ui.js";
-
-const programs = new Map(); // provider key -> Program, for glyphs
-let programsAsked = false;
 
 // One model per render: count, blocked, rows and view share it for 100 ms.
 let memo = { probe: null, at: 0, value: null };
@@ -27,13 +23,7 @@ export default {
   label: "agents",
   icon: "bot",
 
-  async load() {
-    if (!programsAsked) {
-      programsAsked = true;
-      knownAgents().then((known) => known.forEach((p) => programs.set(providerKey(p.key), p))).catch(() => {});
-    }
-    return { state: null, machines: {} };
-  },
+  async load() { return { state: null, machines: {} }; },
 
   rows: (_state, probe) => modelOf(probe).rows.map((r) => ({ key: r.key, target: r.target })),
   count: (_state, probe) => modelOf(probe).rows.length,
@@ -53,7 +43,7 @@ export default {
     ];
     const rows = m.rows.map((r) => {
       const c = t[r.color] ?? t.muted;
-      const pic = glyph(t, programs.get(providerKey(r.program)), 12);
+      const pic = glyph(t, r.program, 12);
       const where = h_flex().gap(5).min_w(0).truncate()
         .when(Boolean(r.machine), (el) => el.child(div().flex_none().text_color(t.dim).child(r.machine)))
         .when(Boolean(r.repo), (el) => el.child(div().flex_none().text_color(t.ansi4).child(r.repo)).child(div().truncate().child(r.branch ?? "")))

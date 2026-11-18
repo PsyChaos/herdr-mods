@@ -10,7 +10,7 @@ const STATES = { blocked: ["needs you", "blocked", 0], working: ["working", "wor
 
 export const shortApp = (app) => {
   const k = providerKey(app);
-  return k === "antigravity" ? "agy" : k || "?";
+  return k === "antigravity" ? "agy" : k === "claude-code" ? "claude" : k || "?";
 };
 
 // KiB -> "1.4G" / "612M"; null -> "-".
@@ -37,7 +37,7 @@ export function build({ agents, spaces, terminals, probe, now }) {
     const [word, color, rank] = STATES[a.status] ?? [a.status, "dim", 4];
     const msg = reported.get(a.address);
     return {
-      key: a.address, app: shortApp(a.app), program: a.program ?? a.app, state: a.status, word, color, rank, machine,
+      key: a.address, app: shortApp(a.app), program: a.program ?? null, state: a.status, word, color, rank, machine,
       repo: p?.repo ?? null, branch: p?.branch ?? null, place: [a.space_name, a.tab_name].filter(Boolean).join(" / "),
       doing: typeof msg === "string" ? msg : "", history: p?.history ?? [], cpu: p?.cpu ?? null, rssKiB: p?.rssKiB ?? null,
       age: p?.created_ms ? fmtAge(now - p.created_ms) : "-", target: { terminal: a.address },
