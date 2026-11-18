@@ -2,7 +2,7 @@
 // (machine chips, range), a tab strip and the active tab's view. A tab is one
 // file in tabs/ plus one line in TABS (see RECIPE.md).
 //
-// Keys: j/k or down/up move the selection, enter acts on it, 1..9 or
+// Keys: j/k or down/up move the selection, enter acts on it, 1..8 or
 // tab/shift-tab pick a tab, escape closes. While open, every tab loads every
 // 4 s and the shared probe samples every 5 s; nothing runs while the window is
 // closed. Opens with ctrl-shift-i.
@@ -10,17 +10,25 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay } from "herdr";
-import { dot, mono, icon, chip, segmented } from "./ui.js";
+import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay, shared } from "herdr";
+import { dot, mono, icon, chip, segmented, confirm, note, openUrl } from "./ui.js";
 import { probeAll } from "./probe.js";
 import overview from "./tabs/overview.js";
 import agentsTab from "./tabs/agents.js";
 import swarm from "./tabs/swarm.js";
+import team from "./tabs/team.js";
+import usage from "./tabs/usage.js";
+import prs from "./tabs/prs.js";
+import ports from "./tabs/ports.js";
+import docker from "./tabs/docker.js";
 
-const TABS = [overview, agentsTab, swarm];
+const TABS = [overview, agentsTab, swarm, team, usage, prs, ports, docker];
 const TICK_MS = 4000;
 const PROBE_MS = 5000;
 const RANGES = [{ label: "2m", n: 24 }, { label: "5m", n: 60 }, { label: "10m", n: 120 }];
+let lastTab = null; // id of the tab used last; module scope keeps it across close and reopen
+const NOTE_MS = 8000;
+const TAB_FRESH_MS = 10000;
 const probes = {}; // machine ("here" or its name) -> MachineProbe; module scope keeps the charts across close and reopen
 
 // Herdr's machines except those still loading; "unavailable" ones are listed but not probed.
@@ -28,14 +36,18 @@ const machineList = () => machines().filter((m) => m.name && m.layout !== "loadi
 
 export default class Deck extends View {
   init(_props, cx) {
+    if (props()?.watch) { TABS.find((x) => x.id === props().watch)?.watch?.(cx); return; }
     this.state = {}; // tab id -> its state
+    this.loading = {}; // tab id -> a load is running
+    this.results = {}; // tab id -> {machine: "ok" | "error"} from its last load
     this.sel = {}; // tab id -> selected row key
     this.pos = {}; // tab id -> its position, to move on when the key is gone
-    this.up = {}; // machine name ("here" for this computer) -> true reachable
     this.range = 60;
     this.query = ""; // search text, passed to every tab
     this.searching = false; // typing into the search field
-    this.active = 0;
+    const want = shared("deck.tab");
+    const id = want?.at > Date.now() - TAB_FRESH_MS ? want.id : lastTab;
+    this.active = Math.max(0, TABS.findIndex((x) => x.id === id));
     this.h = cx.focus_handle();
     this.h.focus();
     cx.timer.after(600, () => this.h.focus());
@@ -66,27 +78,23 @@ export default class Deck extends View {
     });
   }
 
+  // Each tab loads on its own: a slow one never delays another.
   tick(cx) {
-    if (this.loading) return;
-    this.loading = true;
     const names = machineList().filter((m) => m.layout !== "unavailable").map((m) => m.name);
     const board = props()?.board;
-    cx.spawn(async (cx) => {
-      try {
-        const results = await Promise.all(TABS.map((tab) =>
-          tab.load({ machines: [null, ...names], state: this.state[tab.id], board, probe: probes }).catch(() => null)));
-        const up = {};
-        results.forEach((r, i) => {
-          if (!r) return;
-          this.state[TABS[i].id] = r.state;
-          for (const [name, s] of Object.entries(r.machines)) up[name] = (up[name] ?? true) && s === "ok";
-        });
-        this.up = up;
-      } finally {
-        this.loading = false;
-        cx.notify(); // also when nothing changed: live terminals() data moves alone
-      }
-    });
+    for (const tab of TABS) {
+      if (this.loading[tab.id]) continue;
+      this.loading[tab.id] = true;
+      cx.spawn(async (cx) => {
+        try {
+          const r = await tab.load({ machines: [null, ...names], state: this.state[tab.id], board, probe: probes }).catch(() => null);
+          if (r) { this.state[tab.id] = r.state; this.results[tab.id] = r.machines; }
+        } finally {
+          this.loading[tab.id] = false;
+          cx.notify(); // also when nothing changed: live terminals() data moves alone
+        }
+      });
+    }
   }
 
   // Keeps the selected key; when it is gone, the row now at the old position.
@@ -118,7 +126,7 @@ export default class Deck extends View {
       if (i >= 0) this.active = i;
       return;
     }
-    if (target.url) return void exec("xdg-open", [target.url]).catch(() => null);
+    if (target.url) return void openUrl(target.url);
     // Remote terminals are machine-qualified (machine/tN); a string already is.
     const t = typeof target === "string" ? target : target.terminal;
     const address = typeof target === "string" || !target.machine || t.includes("/") ? t : `${target.machine}/${t}`;
@@ -145,6 +153,13 @@ export default class Deck extends View {
   key(e, cx) {
     const k = e.keystroke;
     const n = TABS.length;
+    const ui = TABS[this.active].ui;
+    if (ui?.dialog) { // a dialog owns the keyboard
+      if (k === "enter") ui.dialog.onConfirm(cx);
+      else if (k === "escape") ui.dialog.onCancel(cx);
+      cx.stop_propagation();
+      return void cx.notify();
+    }
     if (this.searching) {
       if (!this.searchKey(e)) return;
       cx.stop_propagation();
@@ -155,7 +170,7 @@ export default class Deck extends View {
     else if (k === "j" || k === "down") this.move(1);
     else if (k === "k" || k === "up") this.move(-1);
     else if (k === "enter") this.go(this.rowsOf(TABS[this.active]).find((r) => r.key === this.sel[TABS[this.active].id]));
-    else if (/^[1-9]$/.test(k)) this.active = Math.min(Number(k) - 1, n - 1);
+    else if (/^[1-8]$/.test(k)) this.active = Math.min(Number(k) - 1, n - 1);
     else if (k === "tab") this.active = (this.active + 1) % n;
     else if (k === "shift-tab") this.active = (this.active + n - 1) % n;
     else if (k === "escape") closeOverlay(props()?.overlay);
@@ -167,7 +182,10 @@ export default class Deck extends View {
   health(name) {
     const m = probes[name];
     if (!m) return "loading";
-    return m.ok && this.up[name] !== false ? "ok" : "error"; // ok: its probe and every tab's load said ok
+    // A tab reports a machine only when it cannot reach it, so any non-"ok" entry is an error.
+    const key = name === "here" ? "null" : name; // load results are keyed by machine name; this computer is null
+    const bad = Object.values(this.results).some((r) => r?.[key] !== undefined && r[key] !== "ok");
+    return m.ok && !bad ? "ok" : "error";
   }
 
   header(t) {
@@ -195,10 +213,10 @@ export default class Deck extends View {
   }
 
   tabs(t) {
-    return h_flex().h(32).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border).children([...TABS.map((tab, i) => {
+    return h_flex().h(32).flex_none().px(8).gap(2).items_center().border_b(1).border_color(t.border).children([...TABS.map((tab, i) => {
       const s = this.state[tab.id];
       const on = i === this.active;
-      return h_flex().id(`tab-${tab.id}`).h(24).px(10).gap(6).items_center().rounded(6).cursor_pointer()
+      return h_flex().id(`tab-${tab.id}`).h(24).px(7).gap(5).items_center().rounded(6).cursor_pointer()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { this.h.focus(); this.active = i; cx.notify(); })
         .when(on, (el) => el.bg(t.hover).text_color(t.foreground))
@@ -210,14 +228,23 @@ export default class Deck extends View {
   }
 
   render(cx) {
+    if (props()?.watch) return div().id("deck-watch");
     const t = theme();
     const tab = TABS[this.active];
+    lastTab = tab.id;
+    if (tab.ui?.query != null) { this.query = tab.ui.query; tab.ui.query = null; } // set by another tab
+    const n = tab.ui?.note;
+    const shown = n && (n.level === "error" || Date.now() - n.at < NOTE_MS) ? n : null;
     this.rowsOf(tab);
     return v_flex().id("deck").track_focus(this.h).on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", () => this.h.focus()) // no stop_propagation: the window stays draggable
       .size_full().bg(t.canvas).text_color(t.foreground).text_size(12).font_family(mono())
       .child(this.header(t))
       .child(this.tabs(t))
-      .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t, query: this.query }));
+      .child(div().relative().flex_1().min_h(0).flex().flex_col()
+        .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t, query: this.query }))
+        .when(Boolean(shown), (el) => el.child(note(t, shown)))
+        .when(Boolean(tab.ui?.dialog), (el) => el.child(div().absolute().top(0).left(0).size_full().bg(t.canvas).flex().items_start().justify_center().pt(40)
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(confirm(t, tab.ui.dialog)))));
   }
 }
