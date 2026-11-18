@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { build, summary, fmtMem, fmtAge, fmtCpu, shortApp, filterRows } from "./agents-model.js";
+import { build, summary, fmtMem, fmtAge, fmtCpu, shortApp, filterRows, titleOf, statusOf, ended, snapshot, remember, finishedTasks, filterFinished, parentOf } from "./agents-model.js";
 
 assert.deepEqual([fmtMem(1.4 * 1024 * 1024), fmtMem(612 * 1024), fmtMem(null)], ["1.4G", "612M", "-"]);
 assert.deepEqual([fmtAge(30e3), fmtAge(42 * 60e3), fmtAge(3 * 3600e3), fmtAge(2 * 86400e3), fmtAge(null)], ["<1m", "42m", "3h", "2d", "-"]);
@@ -24,4 +24,35 @@ assert.equal(summary(m), "2 working · claude uses most");
 assert.equal(summary(build({ agents, spaces, terminals, probe: {}, now: 0 })), "2 working"); // no CPU yet
 assert.deepEqual(filterRows(m.rows, "API main").map((r) => r.key), ["t2"]);
 assert.equal(filterRows(m.rows, "").length, m.rows.length);
+
+// Tasks: under their parent row; shell helpers included; a title from the label or the prompt.
+assert.equal(titleOf({ argv: ["claude", "-p", "Review src/auth. Then report."] }), "Review src/auth.");
+assert.equal(titleOf({ labels: { task: "Port it" }, argv: ["x"] }), "Port it");
+assert.equal(parentOf({ address: "r/t9", parent: "t1" }), "r/t1");
+const lead = ag("t1", "working", "s1");
+const kid = ag("t6", "idle", "s1", "codex");
+const tt = [
+  { address: "t1" },
+  { address: "t6", state: "live", parent: "t1", labels: { task: "Write tests" }, created_ms: 100 },
+  { address: "t7", state: "live", parent: "t1", status: "running", labels: { task: "Shell job" }, argv: ["sh"], created_ms: 200 },
+  { address: "t8", state: "live", parent: "t6", argv: ["sh"], name: "deep", created_ms: 300 },
+];
+const tm = build({ agents: [lead, kid, ag("t2", "idle", "s1")], spaces, terminals: tt, probe: {}, now: 3601e3 });
+assert.deepEqual(tm.rows.map((r) => [r.key, r.depth]), [["t1", 0], ["t7", 1], ["t6", 1], ["t8", 2], ["t2", 0]]);
+assert.deepEqual([tm.rows[1].title, tm.rows[1].word, tm.rows[1].app], ["Shell job", "working", "sh"]);
+assert.deepEqual(filterRows(tm.rows, "write tests").map((r) => r.key), ["t6"]);
+const loop = build({ agents: [], spaces, terminals: [{ address: "a", state: "live", parent: "b" }, { address: "b", state: "live", parent: "a" }], probe: {}, now: 0 });
+assert.equal(loop.rows.length, 2); // a parent cycle still shows
+
+// Ending: killed after idle = finished; exit 1 = failed; a signal = stopped.
+assert.deepEqual([{ state: "x", exit_code: 0 }, { state: "x", exit_code: 1 }, { state: "x", signal: "KILL" }, { state: "x", reason: "killed", last_status: "idle" }].map((x) => statusOf(x, new Map())),
+  ["finished", "failed", "stopped", "finished"]);
+const snap = snapshot({ address: "t9", argv: ["codex", "do the thing now"], created_ms: 1000, status: "working" });
+assert.equal(snap.board_title, "do the thing now");
+const hist = remember(remember([], ended(snap, { exit_code: 1, finished_ms: 5000 }, 0)), ended({ ...snap, address: "t10" }, {}, 9000));
+assert.deepEqual(hist.map((h) => [h.address, h.exit_code, h.finished_ms]), [["t10", null, 9000], ["t9", 1, 5000]]);
+assert.equal(remember(hist, hist[1], 1).length, 1);
+const fin = finishedTasks({ terminals: [{ address: "t10", state: "live", parent: "t1" }, { address: "t11", state: "exited", parent: "t1", exit_code: 0, finished_ms: 7000, created_ms: 1000 }], history: hist, now: 9500 });
+assert.deepEqual(fin.map((f) => [f.key, f.word, f.code]), [["t11", "done", "exit 0"], ["t9", "failed", "exit 1"]]); // t10 is live: its history entry is hidden
+assert.deepEqual(filterFinished(fin, "failed thing").map((f) => f.key), ["t9"]);
 console.log("ok agents-model");
