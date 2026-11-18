@@ -152,7 +152,7 @@ function conflictsOf(trees) {
   return [...out, ...bySides.values()];
 }
 
-// An agent's address on its own machine ("192.168.68.104/t7" → "t7").
+// An agent's address on its own machine ("10.0.0.2/t7" → "t7").
 export const localAddress = (address) => address.split("/").pop();
 
 // rows: [{agent, machine, cwd}]; results: machine label → probe answer.
@@ -238,3 +238,19 @@ export function filterGroup(view, words) {
     .filter((repo) => repo.trees.length);
   return { repos, loose: view.loose.filter((row) => matches(words, agentText(row.agent))) };
 }
+
+// The conversation being viewed counts as read after READ_AFTER_MS drawn. watchThread(prev, thread, now)
+// is called on every draw: the timer restarts when the conversation changed, was not drawn for
+// HIDDEN_MS (other tab, search) or got a new message, and is off (Infinity) while nothing is unread.
+// shortcut: a hide shorter than HIDDEN_MS (a draw happens at least every 4 s) is not seen; lower it if that matters.
+export const READ_AFTER_MS = 8000;
+export const HIDDEN_MS = 6000;
+export function watchThread(prev, thread, now) {
+  if (!thread) return null;
+  const same = prev && prev.key === thread.key && now - prev.seen <= HIDDEN_MS && prev.count === thread.messages.length;
+  const since = !thread.unread ? Infinity : same && prev.since !== Infinity ? prev.since : now;
+  return { key: thread.key, count: thread.messages.length, since, seen: now, messages: thread.messages };
+}
+
+// True when the watched conversation has been drawn long enough and is still being drawn.
+export const readDue = (w, now) => Boolean(w) && w.since !== Infinity && now - w.seen <= HIDDEN_MS && now - w.since >= READ_AFTER_MS;

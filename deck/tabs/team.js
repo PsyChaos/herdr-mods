@@ -5,13 +5,12 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, panes, spaces, exec, hc, shared, setShared } from "herdr";
-import { PROBE, BOARD_FILE, MARK, group, localAddress, wordsOf, addressOn, treeFiles, filterGroup } from "../team/model.js";
+import { PROBE, BOARD_FILE, MARK, group, localAddress, wordsOf, addressOn, treeFiles, filterGroup, watchThread, readDue } from "../team/model.js";
 import { buildInbox, searchInbox, who } from "../team/inbox.js";
 import { agentName, overlapText, sharedText } from "../team/messages.js";
 import { panel, textButton, chips, dot, num } from "../ui.js";
 
 const REFRESH_MS = 8000;
-const READ_AFTER_MS = 8000; // a conversation on screen this long counts as read
 const READ_KEY = "team.read";
 const FILES_SHOWN = 6; // files a worktree shows before "N more"
 const THREAD_SHOWN = 30; // messages a conversation shows before "N earlier"
@@ -29,8 +28,7 @@ const ui = { dialog: null, note: null, mode: "agents", openTrees: new Set(), sho
 let results = {}; // machine label -> probe answer, replaced as each machine answers
 let reach = {}; // machine name or "here" -> "ok" | "error"
 let started = 0;
-let shown = null; // {key, since, count}: the conversation on screen
-let renderedAt = 0;
+let shown = null; // watchThread()'s answer for the conversation drawn last
 
 const setNote = (text, level = "info") => { ui.note = { text, level, at: Date.now() }; };
 const failed = (e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) });
@@ -167,8 +165,8 @@ export default {
 
   async load({ machines: names }) {
     if (Date.now() - started >= REFRESH_MS) refresh(names);
-    // The conversation on screen for 8 s is read.
-    if (ui.mode === "messages" && shown && Date.now() - renderedAt < 5000 && Date.now() - shown.since >= READ_AFTER_MS) {
+    // The conversation drawn for 8 s is read.
+    if (readDue(shown, Date.now())) {
       markRead(shown);
       shown = { ...shown, since: Infinity };
     }
@@ -186,7 +184,6 @@ export default {
   },
 
   view(state, sel, cx, pick, { t, query }) {
-    renderedAt = Date.now();
     const m = modelOf(state);
     const words = wordsOf(query);
     const errors = Object.entries(m.res).filter(([, r]) => r.error).map(([label, r]) => `${label}: ${r.error}`);
@@ -318,8 +315,7 @@ function messagesView(t, m, words, sel, _cx, pick, query) {
   const chosen = all.find((x) => x.thread.key === sel) ?? all[0];
   const whole = new Map(m.inbox.flatMap((p) => p.threads.map((x) => [x.key, x])));
   const full = whole.get(chosen.thread.key);
-  if (full && shown?.key !== full.key) shown = { key: full.key, since: full.unread ? Date.now() : Infinity, count: full.messages.length, messages: full.messages };
-  else if (full) shown = { ...shown, messages: full.messages, since: full.unread ? shown.since : Infinity };
+  shown = watchThread(shown, full, Date.now());
   const left = v_flex().id("inbox-list").flex_none().w(300).h_full().overflow_y_scrollbar().pb(12)
     .children(projects.map((p) => panel(t, { id: `proj-${p.key}`, icon: "archive", title: p.name,
       right: [p.machine, p.unread ? `${p.unread} new` : ""].filter(Boolean).join(" · "),

@@ -3,7 +3,7 @@
 
 const MAX_PATHS = 8;
 
-// "Codex in Vensift / 2"
+// "Codex in api / 2"
 export const agentName = (a) => `${a.program?.name ?? "agent"} in ${a.space_name} / ${a.tab_name}`;
 
 // "t3n (Codex, branch feat-x, ~/x-wt)"

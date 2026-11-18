@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { group, repoName, parseLog, wordsOf, addressOn, treeFiles, filterGroup } from "./model.js";
+import { watchThread, readDue, group, repoName, parseLog, wordsOf, addressOn, treeFiles, filterGroup } from "./model.js";
 import { buildInbox, searchInbox } from "./inbox.js";
 import { overlapText } from "./messages.js";
 
@@ -34,4 +34,22 @@ assert.equal(buildInbox(results, { [inbox[0].threads[0].key]: 1 })[0].unread, 1)
 const found = searchInbox(inbox, wordsOf("parser"));
 assert.equal(found[0].threads.length, 1);
 assert.equal(found[0].threads[0].messages.length, 1);
+
+// read timer
+const th = (n, unread) => ({ key: "k", messages: Array(n).fill({}), unread });
+let w = watchThread(null, th(2, 2), 0);
+assert.ok(!readDue(w, 7999)); 
+w = watchThread(w, th(2, 2), 4000);
+assert.ok(readDue(w, 8000));
+let r = watchThread(w, th(2, 0), 8000); // read: timer off
+assert.equal(r.since, Infinity);
+r = watchThread(r, th(3, 1), 9000); // read conversation gets a new message: fresh timer
+assert.equal(r.since, 9000);
+r = watchThread(r, th(3, 1), 13000);
+assert.ok(!readDue(r, 16999)); assert.ok(readDue(watchThread(r, th(3, 1), 17000), 17000));
+let h = watchThread(null, th(2, 2), 0); // hidden (other tab) for 20 s, then drawn again: restarts
+h = watchThread(h, th(2, 2), 20000);
+assert.equal(h.since, 20000);
+assert.ok(!readDue(watchThread(h, th(2, 2), 24000), 24000)); // 4 s since return
+assert.ok(!readDue(watchThread(null, th(2, 2), 0), 30000)); // not drawn since: never due
 console.log("ok team model");
