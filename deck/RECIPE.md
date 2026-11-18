@@ -104,6 +104,13 @@ names, so Deck writes the chosen size into its installed `mod.json`, closes its
 window and opens it again with `mod.open` (same spot). Copying Deck over it
 again resets the size to `S`.
 
+## Window frame
+
+`mod.json` asks for `"frame": "none"`: Deck draws its own border and an opaque
+theme background, with corners that follow the layout (the smallest pane
+`radius` it names; Arcade's 0 gives square corners, else 8). Herdr's own frame
+is always rounded.
+
 ## One tab in a layout
 
 A layout block can show a single tab, without header, tab strip or search:

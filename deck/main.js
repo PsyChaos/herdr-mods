@@ -10,9 +10,9 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay, shared, readTextFile, writeTextFile, appHome } from "herdr";
+import { machines, panes, agents, spaces, run, exec, theme, props, layout, closeOverlay, shared, readTextFile, writeTextFile, appHome } from "herdr";
 import { dot, mono, icon, chip, segmented, confirm, note, openUrl } from "./ui.js";
-import { machineBad, askedTab, SIZES, sizeIndex } from "./frame.js";
+import { machineBad, askedTab, SIZES, sizeIndex, cornerRadius, solid } from "./frame.js";
 import { probeAll } from "./probe.js";
 import overview from "./tabs/overview.js";
 import agentsTab from "./tabs/agents.js";
@@ -284,7 +284,8 @@ export default class Deck extends View {
     this.rowsOf(tab);
     return v_flex().id("deck").track_focus(this.h).on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", () => this.h.focus()) // no stop_propagation: the window stays draggable
-      .size_full().bg(t.canvas).text_color(t.foreground).text_size(12).font_family(mono())
+      .size_full().bg(this.only ? t.canvas : solid(t.background)).text_color(t.foreground).text_size(12).font_family(mono())
+      .when(!this.only, (el) => el.rounded(cornerRadius(layout())).border(1).border_color(t.border).overflow_hidden()) // own frame (mod.json frame "none")
       .when(!this.only, (el) => el.child(this.header(t)).child(this.tabs(t)))
       .child(div().relative().flex_1().min_h(0).flex().flex_col()
         .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t, query: this.query, compact: Boolean(this.only) }))
