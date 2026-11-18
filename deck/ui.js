@@ -3,7 +3,8 @@
 
 import { div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { settings, exec } from "herdr";
+import { settings, exec, window as hostWindow } from "herdr";
+import { thenNotify } from "./frame.js";
 
 export const STAGES = ["fire", "cook", "taste", "review", "pass"];
 
@@ -166,7 +167,7 @@ export function table(t, columns, rows, selectedKey) {
 
 // Detached, so the browser it may start doesn't belong to Herdr's exec (from ci).
 const OPEN_SH = 'command -v setsid >/dev/null && exec setsid -f "$0" "$1" >/dev/null 2>&1; exec "$0" "$1" >/dev/null 2>&1 &';
-export const openUrl = (url) => exec("sh", ["-c", OPEN_SH, "xdg-open", url]).catch(() => null);
+export const openUrl = (url) => exec("sh", ["-c", OPEN_SH, hostWindow()?.platform === "macos" ? "open" : "xdg-open", url]).catch(() => null);
 
 // 18x18 icon button at a row's end. A disabled one keeps its tooltip, to say why.
 export function rowButton(t, { id, icon: name, tooltip, color = t.dim, hover = t.foreground, disabled = false, onPress }) {
@@ -207,8 +208,8 @@ export function confirm(t, { title, lines = [], action, destructive = true, onCo
   const body = v_flex().gap(8)
     .child(v_flex().gap(2).children(lines.map((l) => div().text_color(t.muted).child(l))))
     .child(h_flex().gap(8).justify_end().pt(4)
-      .child(textButton(t, { id: "dialog-cancel", label: "Cancel", onPress: (cx) => onCancel(cx) }))
-      .child(textButton(t, { id: "dialog-confirm", label: action, primary: true, destructive, onPress: (cx) => onConfirm(cx) })));
+      .child(textButton(t, { id: "dialog-cancel", label: "Cancel", onPress: thenNotify(onCancel) }))
+      .child(textButton(t, { id: "dialog-confirm", label: action, primary: true, destructive, onPress: thenNotify(onConfirm) })));
   return div().w(460).child(panel(t, { id: "dialog", title, accent: destructive ? t.ansi1 : t.ansi4, body }));
 }
 

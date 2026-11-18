@@ -75,7 +75,7 @@ export default {
 }
 ```
 
-`t` is `theme()`; `query` is the search text (`""` when none): filter rows and view by it, or ignore it. `state` is `null` until the first load. `machines` is `[null, ...names]` (`null` = this computer).
+`t` is `theme()`; `query` is the search text (`""` when none): filter rows and view by it, or ignore it. `state` is `null` until the first load. `machines` is `[null, ...names]` (`null` = this computer); in the `machines` result of `load`, this computer is the key `"here"`.
 
 - `rows(state, probe, query)` -> `[{key, target}]` in display order; `target` is `{url}` (opened with `openUrl`), `{tab: id}`, an address string, or `{terminal, machine}`.
 - `view` draws with `ui.js` only (each export takes the theme first; colors only from its tokens): `mono`, `icon`, `dot`, `band`, `panel`, `rowLabel`, `meter`, `coreCells`, `history`, `sparkline`, `chip`, `segmented`, `table`, `num`, `rail`, `glyph`, and
