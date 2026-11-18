@@ -92,7 +92,8 @@ export default {
         const key = `${keyOf(m)}|${e.provider}`;
         const note = e.wait ? "connecting…" : noteOf(e);
         const name = h_flex().gap(6).min_w(0).child(div().truncate().font_semibold().text_color(e.error ? t.blocked : t.foreground).child(e.label))
-          .when(Boolean(e.plan), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(String(e.plan))));
+          .when(Boolean(e.plan), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(String(e.plan))))
+          .when(Boolean(note), (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(note))); // beside the name: totals and errors stay visible
         // Each line: window, bar, percent, reset, text at the end.
         const lines = [
           ...e.windows.map((w) => [w.label ?? w.id ?? "?", div().opacity(w.stale ? 0.4 : 1).child(meter(t, w.used_percent, 24, "mem")),
@@ -101,7 +102,6 @@ export default {
         ];
         if (e.error) lines.push(["", "", "", "", div().truncate().text_color(t.blocked).child(e.error)]);
         else if (!lines.length) lines.push(["", "", "", "", div().text_color(t.dim).child(e.wait ? "" : "no data")]);
-        if (note) lines[0][4] = div().text_color(t.dim).child(note);
         lines.forEach((l, j) => rows.push({ key: j ? `${key}#${j}` : key, cells: [j ? "" : name, ...l], onClick: (_e, cx2) => pick(key, cx2) }));
       }
       return panel(t, { id: `usage-${keyOf(m)}`, icon: "activity", title: m ?? "this computer", right: i === 0 ? refreshBtn : "", body: table(t, columns, rows, sel) });

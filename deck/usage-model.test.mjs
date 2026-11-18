@@ -22,4 +22,8 @@ assert.equal(noteOf(e, now), null);
 assert.equal(noteOf({ windows: [{ stale: true }], totals: [] }, now), "stale");
 assert.equal(noteOf({ windows: [], updated_at: new Date(now - 2 * 3600e3).toISOString() }, now), "2h 0m ago");
 assert.deepEqual([matches(e, ""), matches(e, "demo pro"), matches(e, "demo free"), matches(e, "R"), matches({ ...e, machine: null }, "this")], [true, true, false, true, true]);
+// Old totals and old errors still get their age note (the view shows it beside the name, not over the detail).
+const old = new Date(now - 2 * 3600e3).toISOString();
+assert.equal(noteOf({ windows: [], totals: [{ text: "1k" }], updated_at: old }, now), "2h 0m ago");
+assert.equal(noteOf({ windows: [], totals: [], error: "boom", updated_at: old }, now), "2h 0m ago");
 console.log("ok usage-model");
