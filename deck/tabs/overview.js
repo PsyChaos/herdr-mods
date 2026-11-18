@@ -45,6 +45,11 @@ function agentText(name) {
   return parts.join(" · ") || "none";
 }
 
+// The docker tab searches by machine label.
+function openDocker(name) {
+  if (docker.ui) docker.ui.query = name === "here" ? "This computer" : name;
+}
+
 export default {
   id: "overview",
   label: "overview",
@@ -56,9 +61,9 @@ export default {
   },
   count: (_state, probe) => names(probe).filter((m) => probe[m].ok).length,
   blocked: () => false,
-  // "docker:<name>" rows exist so "Open in Docker" can switch tabs through pick().
+  // "docker:<name>" rows are the Open in Docker buttons; Enter on one does what a click does (the getter runs only when Deck goes there).
   rows: (_state, probe) => names(probe).flatMap((m) => [{ key: m, target: { tab: "agents" } },
-    ...(dockerCounts(extras.get(m)?.data?.docker).length ? [{ key: `docker:${m}`, target: { tab: "docker" } }] : [])]),
+    ...(dockerCounts(extras.get(m)?.data?.docker).length ? [{ key: `docker:${m}`, target: { get tab() { openDocker(m); return "docker"; } } }] : [])]),
 
   view(_state, sel, _cx, pick, { range, probe, t }) {
     const bold = (text, color = t.foreground) => div().font_semibold().text_color(color).child(text);
@@ -111,10 +116,7 @@ export default {
         ...(counts.length ? [row("container", "docker", [line(
           dot(t, bad ? t.blocked : running ? t.ansi2 : t.dim),
           div().flex_1().min_w(0).truncate().text_color(bad ? t.blocked : t.foreground).child(counts.map((c) => `${c.count} ${c.word}`).join(" · ")),
-          textButton(t, { id: `docker-${name}`, label: "Open in Docker", onPress: (cx) => {
-            if (docker.ui) docker.ui.query = name === "here" ? "This computer" : name; // the docker tab searches by machine label
-            pick(`docker:${name}`, cx);
-          } }))])] : []),
+          textButton(t, { id: `docker-${name}`, label: "Open in Docker", primary: sel === `docker:${name}`, onPress: (cx) => pick(`docker:${name}`, cx) }))])] : []),
         row("bot", "agents", [div().text_color(t.muted).child(agentText(name))]),
         ...(extras.get(name)?.error ? [div().text_color(t.ansi3).child(`extras: ${extras.get(name).error}`)] : []),
       ];
