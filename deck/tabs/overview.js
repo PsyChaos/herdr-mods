@@ -13,7 +13,7 @@ const peak = (a, b) => Math.max(1, ...a.filter(Number.isFinite), ...b.filter(Num
 
 // "3 working · 1 needs you · 2 idle" for the agents of one machine ("here" = this computer).
 function agentText(name) {
-  const where = new Map(spaces().map((s) => [s.space, s.machine ?? "here"]));
+  const where = new Map(spaces().map((s) => [s.id, s.machine ?? "here"]));
   const n = { working: 0, blocked: 0, done: 0, idle: 0 };
   for (const a of agents()) if ((where.get(a.space) ?? "here") === name && a.status in n) n[a.status]++;
   const parts = [[n.working, "working"], [n.blocked, "needs you"], [n.done, "done"], [n.idle, "idle"]].filter(([c]) => c).map(([c, w]) => `${c} ${w}`);
@@ -39,14 +39,13 @@ export default {
       const m = probe[name];
       const s = m.sample;
       const title = { id: `machine-${name}`, icon: "server", title: name };
-      if (!m.ok && !s) {
+      if (!m.ok || !s) {
         return panel(t, { ...title, accent: t.ansi1, body: div().text_color(t.ansi1).child(m.error ?? "no data") });
       }
       const cpu = s.cpu, mem = s.mem, hist = m.history;
       const rx = slice(hist.rx), tx = slice(hist.tx), top = peak(rx, tx);
       const pct = (v, g) => bold(Number.isFinite(v) ? `${Math.round(v)}%` : "-", Number.isFinite(v) ? band(t, g, v) : t.dim);
       const body = [
-        !m.ok && div().text_color(t.ansi1).child(m.error ?? "probe failed"),
         row("microchip", "cores", [coreCells(t, s.cores)]),
         row("cpu", "cpu", [
           meter(t, cpu, 24, "cpu"),
