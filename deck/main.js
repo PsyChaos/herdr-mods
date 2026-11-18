@@ -39,6 +39,11 @@ export default class Deck extends View {
     cx.timer.after(600, () => this.h.focus());
     cx.timer.every(TICK_MS, (cx) => this.tick(cx));
     cx.timer.every(PROBE_MS, (cx) => this.sample(cx));
+    // Closed time is a gap in every chart, and the next sample is a fresh baseline.
+    for (const p of Object.values(probes)) {
+      p.raw = null;
+      for (const h of [...Object.values(p.history), ...Object.values(p.agents).map((a) => a.history)]) h.push(null);
+    }
     this.sample(cx);
     this.tick(cx);
   }

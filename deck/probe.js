@@ -17,9 +17,7 @@ echo "@net"; grep -v '^ *lo:' /proc/net/dev | tail -n +3
 echo "@hz"; getconf CLK_TCK
 echo "@pagesize"; getconf PAGESIZE
 echo "@proc"
-for f in /proc/[0-9]*/stat; do
-  [ -r "$f" ] && awk '{ pid=$1; s=$0; sub(/^.*\) /, "", s); n=split(s, a, " "); print pid, a[2], a[12]+a[13], a[22] }' "$f" 2>/dev/null
-done
+cat /proc/[0-9]*/stat 2>/dev/null | awk '{ pid=$1; s=$0; sub(/^.*\) /, "", s); split(s, a, " "); print pid, a[2], a[12]+a[13], a[22] }'
 HC=$(command -v hc || echo "$HOME/.local/bin/hc")
 for id in "$@"; do
   j=$("$HC" get "$id" --json 2>/dev/null) || continue
@@ -74,12 +72,13 @@ export function parse(text) {
 
 const pct = (a, b) => (b.total > a.total ? Math.round(((b.busy - a.busy) / (b.total - a.total)) * 1000) / 10 : null);
 
-// Process and all its descendants: CPU ticks and rss in KiB (needs pageSize to convert).
+// Process and all its descendants: CPU ticks, rss (pages) and the pids visited.
 export function tree(procs, rootPid) {
   const kids = new Map();
   for (const p of procs) kids.set(p.ppid, [...(kids.get(p.ppid) ?? []), p]);
   const by = new Map(procs.map((p) => [p.pid, p]));
   let ticks = 0, rss = 0, any = false;
+  const pids = [];
   const stack = [rootPid];
   const seen = new Set();
   while (stack.length) {
@@ -87,10 +86,10 @@ export function tree(procs, rootPid) {
     if (seen.has(pid)) continue;
     seen.add(pid);
     const p = by.get(pid);
-    if (p) { any = true; ticks += p.ticks; rss += p.rss; }
+    if (p) { any = true; ticks += p.ticks; rss += p.rss; pids.push(pid); }
     stack.push(...(kids.get(pid) ?? []).map((k) => k.pid));
   }
-  return any ? { ticks, rss } : null;
+  return any ? { ticks, rss, pids } : null;
 }
 
 // Two raws -> a sample. Without prev the rates are null. Process CPU is kept
@@ -101,11 +100,15 @@ export function step(prev, raw) {
   const mem = raw.mem;
   const used = mem.total - mem.avail;
   const agents = {};
+  const nowTicks = new Map(raw.procs.map((p) => [p.pid, p.ticks]));
+  const prevTicks = ok ? new Map(prev.procs.map((p) => [p.pid, p.ticks])) : null;
   for (const [id, term] of Object.entries(raw.terms)) {
     const now = term.pid == null ? null : tree(raw.procs, term.pid);
-    const before = ok && prev.terms[id]?.pid === term.pid && term.pid != null ? tree(prev.procs, term.pid) : null;
+    // Per process, so a child that exited since the last sample doesn't cancel the others' ticks.
+    const known = ok && now && prev.terms[id]?.pid === term.pid;
+    const ticks = known ? now.pids.reduce((sum, pid) => sum + Math.max(0, nowTicks.get(pid) - (prevTicks.get(pid) ?? 0)), 0) : null;
     agents[id] = {
-      cpu: now && before ? Math.max(0, Math.round(((now.ticks - before.ticks) / raw.hz / dt) * 1000) / 10) : null,
+      cpu: known ? Math.round((ticks / raw.hz / dt) * 1000) / 10 : null,
       rssKiB: now ? Math.round((now.rss * raw.pageSize) / 1024) : null,
       created_ms: term.created_ms, repo: term.repo, branch: term.branch,
     };
@@ -142,12 +145,19 @@ export function record(store, machine, result) {
   push(h.tx, s?.net ? s.net.txBps : null, MAX);
   const addr = result.addresses ?? {}; // bare terminal id -> address, as agents() has it
   for (const a of Object.keys(m.agents)) if (!Object.values(addr).includes(a)) delete m.agents[a];
+  const seen = new Set();
   for (const [id, a] of Object.entries(s?.agents ?? {})) {
     const cur = m.agents[addr[id] ?? id] ??= { history: [] };
+    seen.add(cur);
     Object.assign(cur, a);
     push(cur.history, a.cpu, AGENT_MAX);
   }
-  for (const cur of Object.values(m.agents)) if (!s) push(cur.history, null, AGENT_MAX);
+  // Missing from a good sample (hc get failed): no stale numbers. Failed probe: keep the last ones.
+  for (const cur of Object.values(m.agents)) {
+    if (seen.has(cur)) continue;
+    if (s) { cur.cpu = null; cur.rssKiB = null; }
+    push(cur.history, null, AGENT_MAX);
+  }
   return m;
 }
 

@@ -41,7 +41,7 @@ export function panel(t, { id, icon: name, title, accent = t.ansi4, right = "", 
   return v_flex().id(id).flex_none().mx(12).mt(12).child(top).child(content);
 }
 
-export const rowLabel = (t, iconName, word) => h_flex().w(54).flex_none().gap(5).items_center().text_color(t.dim)
+export const rowLabel = (t, iconName, word) => h_flex().w(66).flex_none().gap(5).items_center().text_color(t.dim)
   .child(icon(t, iconName)).child(word);
 
 // Cells of their own position on the gradient; the rest `hover`.
@@ -96,7 +96,7 @@ export function history(t, samples, color, { height = 70, max = 100 } = {}) {
   return chart;
 }
 
-export function sparkline(t, samples, color, { width = 120, height = 14, max = 100 } = {}) {
+export function sparkline(t, samples, color, { width = 120, height = 16, max = 100 } = {}) {
   const chart = div().relative().w(width).h(height).flex_none();
   paths(samples, max, color).els.forEach((e) => chart.child(e));
   return chart;
