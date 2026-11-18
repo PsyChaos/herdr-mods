@@ -39,6 +39,6 @@ its exec fails; a failing script shows in its panel.
 
 Words split on whitespace, each must appear in `:port`, container, program,
 folder, command, terminal (where, name) or machine. Search looks through hidden
-ports too; machines with no match drop out. Enter on a row goes to its terminal.
+ports too; machines with no match drop out. Enter in the search opens the first matching web port in Herdr's browser (`submit`); Enter on a row goes to its terminal.
 
 Pure logic: `deck/ports-model.js` (`node deck/ports-model.test.mjs`).

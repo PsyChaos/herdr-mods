@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { kindOf, isWeb, words, matches, shown, freeLocalPort, stopLines } from "./ports-model.js";
+import { kindOf, isWeb, words, matches, shown, freeLocalPort, stopLines, pollUntil } from "./ports-model.js";
 
 const web = { port: 3000, program: "node", folder: "~/app", command: "node serve.js", pid: 7, local_only: true };
 const db = { port: 5432, container: "shop-pg-1", folder: "~/shop" };
@@ -18,4 +18,11 @@ assert.deepEqual(shown(null, all, "sshd", false, () => null), [sys]); // search 
 assert.equal(freeLocalPort(3000, new Set()), 3000);
 assert.equal(freeLocalPort(3000, new Set([3000, 43000])), 43001);
 assert.equal(stopLines("box", { ...web, local_only: false }, { where: "a/b" }).length, 4);
+const slept = [];
+let n = 0;
+assert.equal(await pollUntil(() => ++n === 3, async (ms) => slept.push(ms), 1000, 250), true);
+assert.deepEqual(slept, [250, 250]);
+slept.length = 0;
+assert.equal(await pollUntil(() => false, async (ms) => slept.push(ms), 1000, 250), false);
+assert.equal(slept.length, 4);
 console.log("ports-model ok");

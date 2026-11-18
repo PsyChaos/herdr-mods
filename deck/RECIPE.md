@@ -72,6 +72,7 @@ export default {
   view(state, sel, cx, pick, {range, probe, t, query}),
   ui,                                    // optional module-scope object, see below
   watch(cx),                             // optional, see "The watcher branch"
+  submit(query, cx),                     // optional: Enter leaves the search field (e.g. ports opens the first match)
 }
 ```
 

@@ -6,7 +6,7 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { terminals, panes, run, exec, hc, setShared } from "herdr";
 import { panel, table, rowButton, chips, openUrl } from "../ui.js";
-import { kindOf, isWeb, shown, machineLabel, portId, freeLocalPort, stopLines } from "../ports-model.js";
+import { kindOf, isWeb, shown, machineLabel, portId, freeLocalPort, stopLines, pollUntil } from "../ports-model.js";
 
 const REFRESH_MS = 10000;
 const STOP_CHECK_MS = 2500;
@@ -86,7 +86,6 @@ for port, entry in sorted(found.items()):
 print(json.dumps(out))
 `;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const slot = (machine) => machine ?? "here"; // key in load()'s machine report
 
 // Module scope: survives a load in flight, a close and a reopen.
@@ -175,10 +174,8 @@ function myBrowser(machine, p, cx) {
       sshTargets[machine] ?? machine]).catch((e) => ({ code: 1, stderr: String(e) }));
     if (started.code !== 0) return say(cx, `The tunnel didn't start: ${(started.stderr || "").trim()}`, "error");
     const address = JSON.parse(started.stdout).address;
-    for (let waited = 0; waited < TUNNEL_WAIT_MS; waited += POLL_MS) {
-      if (await listening(local)) { openUrl(`http://localhost:${local}`); return say(cx, `Tunnel open on localhost:${local}`, "ok"); }
-      await sleep(POLL_MS);
-    }
+    const up = await pollUntil(() => listening(local), (ms) => cx.sleep(ms), TUNNEL_WAIT_MS, POLL_MS);
+    if (up) { openUrl(`http://localhost:${local}`); return say(cx, `Tunnel open on localhost:${local}`, "ok"); }
     const said = (await hc(["read", address]).catch(() => ({ stdout: "" }))).stdout.trim().split("\n").pop();
     await closeTunnel(address);
     say(cx, `The tunnel didn't open${said ? `: ${said}` : ""}. It needs ssh to ${machine} without a password.`, "error");
@@ -194,7 +191,7 @@ function stop(machine, p, force, cx) {
   cx.spawn(async (cx) => {
     const answer = await inMachine(machine, argv);
     if (answer.code !== 0) return say(cx, `Couldn't stop it: ${(answer.stderr || "").trim().split("\n").pop() || `exit ${answer.code}`}`, "error");
-    await sleep(STOP_CHECK_MS);
+    await cx.sleep(STOP_CHECK_MS);
     await read(machine);
     const still = (results[machineLabel(machine)]?.ports ?? []).find((x) => x.port === p.port && p.pid && x.pid === p.pid);
     if (!still) return say(cx, `:${p.port} is free`, "ok");
@@ -236,12 +233,19 @@ export default {
       const r = results[machineLabel(m)];
       // A slow read runs on its own; this call answers from the cache.
       if (!r || (!r.loading && Date.now() - r.at >= REFRESH_MS)) {
-        const reading = read(m);
-        if (!r) await reading; // first time: wait, so the tab has data
+        read(m).then(() => null, () => null); // background; the next tick sees it
       }
       status[slot(m)] = results[machineLabel(m)]?.unreachable ? "error" : "ok";
     }));
     return { state: { at: Date.now() }, machines: status };
+  },
+
+  // Enter in the search: open the first visible web port in Herdr's browser (remote too).
+  submit(query) {
+    for (const r of visible(query)) {
+      const p = r.list.find(isWeb);
+      if (p) return void openPage(r.machine, p);
+    }
   },
 
   count: () => Object.values(results).reduce((n, r) => n + (r.ports ?? []).filter((p) => kindOf(p) === "app").length, 0),

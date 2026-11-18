@@ -49,3 +49,12 @@ export function stopLines(machine, p, term) {
     !p.local_only ? "Other computers use it over the network too." : null,
   ].filter(Boolean);
 }
+
+// Calls check() until it is true, sleeping `step` ms between tries, for at most `total` ms.
+export async function pollUntil(check, sleep, total, step) {
+  for (let waited = 0; waited < total; waited += step) {
+    if (await check()) return true;
+    await sleep(step);
+  }
+  return false;
+}
