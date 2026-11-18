@@ -5,9 +5,9 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { exec, readTextFile, terminals, agents, theme, settings, home, knownAgents } from "herdr";
+import { exec, readTextFile, terminals, agents, home, knownAgents } from "herdr";
 import { model, mergeBoards, liveMap, fixtureLive, providerKey, shortModel, duration, EFFORT } from "../swarm-model.js";
-import { box, table, rail, glyph, dot } from "../ui.js";
+import { panel, table, rail, glyph, dot } from "../ui.js";
 
 const STATE_DIR = 'printf %s "${SWARM_STATE:-$HOME/.local/state/herdr-swarm}"';
 
@@ -16,15 +16,44 @@ let programsAsked = false;
 
 // With the `board` prop (a fixture) nothing is live, so the board itself says who works.
 // One model per render: count, blocked, rows and view share it for 100 ms.
-let memo = { state: null, at: 0, value: null };
-function modelOf(state) {
+let memo = { state: null, query: "", at: 0, value: null };
+function modelOf(state, query = "") {
   const now = Date.now();
-  if (memo.state !== state || now - memo.at > 100) {
+  if (memo.state !== state || memo.query !== query || now - memo.at > 100) {
     const live = state.fixture ? fixtureLive(state.boards) : liveMap(terminals(), agents());
-    memo = { state, at: now, value: model(state.runs, live, now) };
+    const known = new Map([...prs].filter(([, v]) => v.state).map(([url, v]) => [url, v.state]));
+    memo = { state, query, at: now, value: model(state.runs, live, now, known, query) };
   }
   return memo.value;
 }
+
+// PR state of served runs, asked of gh in the background: MERGED and CLOSED are final, OPEN is
+// asked again after a minute, a failed call keeps the old value and is retried after a minute.
+const PR_EVERY_MS = 60000;
+const PR_PER_TICK = 3;
+const PR_WATCHED = 20; // newest closed runs with a PR
+const prs = new Map(); // url -> {state, at, busy}
+function askPrs(runs) {
+  const now = Date.now();
+  const due = runs.filter((r) => r.status !== "open" && r.pr)
+    .sort((a, b) => (Date.parse(b.created) || 0) - (Date.parse(a.created) || 0)).slice(0, PR_WATCHED).map((r) => r.pr)
+    .filter((url, i, all) => all.indexOf(url) === i)
+    .filter((url) => {
+      const p = prs.get(url);
+      return !p || (!p.busy && p.state !== "MERGED" && p.state !== "CLOSED" && now - p.at > PR_EVERY_MS);
+    }).slice(0, PR_PER_TICK);
+  for (const url of due) {
+    const p = prs.get(url) ?? {};
+    prs.set(url, { ...p, busy: true, at: now });
+    exec("gh", ["pr", "view", url, "--json", "state", "-q", ".state"], { timeout: 5000 })
+      .then((r) => {
+        const state = r.stdout.trim();
+        prs.set(url, { state: r.code === 0 && ["MERGED", "OPEN", "CLOSED"].includes(state) ? state : p.state, at: Date.now() });
+      })
+      .catch(() => prs.set(url, { state: p.state, at: Date.now() }));
+  }
+}
+const prColor = (t, word) => (word === "merged" ? t.done : word === "pr open" ? t.working ?? t.ansi4 : word === "closed" ? t.ansi1 : t.dim);
 const text = (v) => (typeof v === "number" ? duration(v) : v ?? "");
 const age = (run) => (Date.parse(run.created) ? duration(Date.now() - Date.parse(run.created)) : "");
 
@@ -51,7 +80,7 @@ async function pathOn(state, machine) {
 export default {
   id: "swarm",
   label: "swarm",
-  icon: "🍳",
+  icon: "layers",
 
   async load(ctx) {
     const state = ctx.state ?? { texts: new Map(), boards: new Map(), paths: new Map(), runs: [] };
@@ -97,12 +126,13 @@ export default {
       state.paths.delete(key);
     }
     if (changed) state.runs = mergeBoards(state.boards).runs;
+    if (!state.fixture) askPrs(state.runs); // not awaited: the tick never waits for gh
     return { state, changed, machines: status };
   },
 
-  rows(state) {
+  rows(state, _probe, query) {
     if (!state) return [];
-    const m = modelOf(state);
+    const m = modelOf(state, query);
     return [
       ...m.open.flatMap((o) => o.rows.map((r) => ({ key: r.key, target: r.target ?? null }))),
       ...m.served.map((s) => ({ key: s.key, target: s.target })),
@@ -117,30 +147,23 @@ export default {
     return state ? modelOf(state).open.some((o) => o.rows.some((r) => r.state === "needs you")) : false;
   },
 
-  view(state, sel, cx, pick) {
-    const t = theme();
-    const mono = settings().font_family ?? "JetBrains Mono";
-    const m = state ? modelOf(state) : { open: [], served: [] };
-    if (m.open.length + m.served.length === 0) {
-      return v_flex().flex_1().items_center().justify_center().gap(6)
-        .child(div().text_size(15).text_color(t.muted).child("No swarm runs."))
-        .child(div().text_size(11).text_color(t.dim).child("Start one with `swarm new`."));
-    }
+  view(state, sel, cx, pick, { t, query }) {
+    const m = state ? modelOf(state, query) : { open: [], served: [] };
     const color = (c) => (c === "ansi1" ? t.ansi1 ?? t.blocked : t[c] ?? t.muted);
     const columns = [
-      { label: "id", w: 30, mono: true },
+      { label: "id", w: 30 },
       { label: "task" },
       { label: "worker", w: 120 },
-      { label: "model", w: 84, mono: true },
+      { label: "model", w: 84 },
       { label: "stage", w: 56 },
       { label: "state", w: 72 },
       { label: "doing now", w: 250 },
-      { label: "time", w: 40, mono: true },
+      { label: "time", w: 40 },
     ];
     const runBox = ({ run, chef, rows }) => {
       const head = chef?.name
         ? h_flex().px(10).h(22).gap(8).items_center().text_size(11)
-          .child(div().flex_none().font_family(mono).text_color(t.dim).child(`chef ${chef.name}`))
+          .child(div().flex_none().text_color(t.dim).child(`chef ${chef.name}`))
           .child(div().min_w(0).truncate().text_color(t.muted).child(chef.msg ?? ""))
         : null;
       const body = table(t, columns, rows.map((r) => {
@@ -157,7 +180,7 @@ export default {
             h_flex().gap(4).items_center().min_w(0).when(Boolean(pic), (el) => el.child(pic)).child(div().truncate().child(who)),
             [shortModel(r.worker.model), effort].filter(Boolean).join("·"),
             rail(t, r.stage, c, run.tasks?.find((x) => x.id === r.id)?.stages),
-            div().truncate().text_color(c).when(r.state === "needs you" || r.state === "sent back", (el) => el.font_semibold()).child(r.state),
+            h_flex().gap(5).items_center().min_w(0).child(dot(t, c, 6)).child(div().truncate().text_color(c).when(r.state === "needs you" || r.state === "sent back", (el) => el.font_semibold()).child(r.state)),
             div().truncate().text_color(t.muted).child(doing),
             div().truncate().text_color(text(r.elapsed) ? t.foreground : t.dim).child(text(r.elapsed) || "-"),
           ],
@@ -166,25 +189,26 @@ export default {
             ? v_flex().pl(40).pr(10).pb(3).children(r.findings.map((f) =>
               h_flex().h(18).gap(8).text_size(10.5).items_center()
                 .child(div().w(56).flex_none().text_color(f.severity === "high" ? color("ansi1") : t.muted).child(f.severity))
-                .child(div().flex_none().max_w(260).truncate().font_family(mono).text_color(t.dim).child(f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""))
+                .child(div().flex_none().max_w(260).truncate().text_color(t.dim).child(f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : ""))
                 .child(div().min_w(0).flex_1().truncate().text_color(t.muted).child(f.issue ?? ""))))
             : null,
         };
-      }), sel, mono);
-      return box(t, run.title ?? run.id, [run.repo_name, run.base, run.host, age(run)].filter(Boolean).join(" · "), [head, body].filter(Boolean));
+      }), sel);
+      return panel(t, { id: `run-${run.id}`, icon: "layers", title: run.title ?? run.id, right: [run.repo_name, run.base, run.host, age(run)].filter(Boolean).join(" · "), body: [head, body].filter(Boolean) });
     };
     const served = m.served.length
-      ? box(t, "served", `${m.served.length} latest`, m.served.map((s) =>
+      ? panel(t, { id: "served", icon: "history", title: "served", accent: t.ansi2, right: query ? `${m.served.length} found` : `${m.served.length} latest`, body: m.served.map((s) =>
         h_flex().id(`row-${s.key}`).h(24).px(10).gap(10).items_center().text_size(11.5)
           .when(s.key === sel, (el) => el.bg(t.hover))
           .when(Boolean(s.pr), (el) => el.cursor_pointer().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => pick(s.key, cx)))
-          .child(dot(t, t.done))
+          .child(h_flex().w(74).flex_none().gap(5).items_center().child(dot(t, prColor(t, s.pr_state))).child(div().truncate().text_color(t.muted).child(s.pr_state)))
           .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(s.title ?? ""))
-          .child(div().flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(`${s.count} ${s.count === 1 ? "task" : "tasks"}`))
-          .child(div().w(50).flex_none().font_family(mono).text_size(10.5).text_color(t.dim).child(text(s.duration) || "-"))
-          .child(div().w(40).flex_none().font_family(mono).text_size(10.5).text_color(t.accent).child(s.pr ? `#${String(s.pr).match(/(\d+)\/?$/)?.[1] ?? "PR"} ↗` : ""))))
+          .child(div().flex_none().text_size(10.5).text_color(t.dim).child(`${s.count} ${s.count === 1 ? "task" : "tasks"}`))
+          .child(div().w(50).flex_none().text_size(10.5).text_color(t.dim).child(text(s.duration) || "-"))
+          .child(div().w(40).flex_none().text_size(10.5).text_color(t.accent).child(s.pr ? `#${String(s.pr).match(/(\d+)\/?$/)?.[1] ?? "PR"} ↗` : ""))) })
       : null;
+    const empty = m.open.length || query ? [] : [div().mx(12).mt(12).text_color(t.dim).child("No open run. Start one with swarm new.")];
     return v_flex().id("swarm-body").flex_1().min_h(0).pb(12).overflow_y_scrollbar()
-      .children(m.open.map(runBox)).children(served ? [served] : []);
+      .children(empty).children(m.open.map(runBox)).children(served ? [served] : []);
   },
 };

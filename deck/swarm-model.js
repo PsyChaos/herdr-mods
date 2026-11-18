@@ -147,9 +147,31 @@ function row(task, run, live, now) {
   };
 }
 
-export function model(runs, live, now) {
+// Case-insensitive: every word of the query must appear in one of the fields.
+export const matches = (query, fields) => {
+  const words = String(query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = fields.filter((f) => f != null).join(" ").toLowerCase();
+  return words.every((w) => hay.includes(w));
+};
+const runFields = (run) => [run.title, run.repo_name, run.id];
+const taskFields = (task) => [task.id, task.title, task.name, task.provider, task.model];
+// The run when it or any task matches; a run that matches only by a task keeps just those tasks.
+export function filterRun(run, query) {
+  if (!String(query ?? "").trim() || matches(query, runFields(run))) return run;
+  const tasks = (run.tasks ?? []).filter((t) => matches(query, [...runFields(run), ...taskFields(t)]));
+  return tasks.length ? { ...run, tasks } : null;
+}
+
+const PR_WORD = { MERGED: "merged", OPEN: "pr open", CLOSED: "closed" };
+export const prWord = (url, prState) => (url ? PR_WORD[prState?.get(url)] ?? "pr ?" : "no pr");
+const SERVED_SHOWN = 5;
+const SERVED_FOUND = 20;
+
+// prState: Map url -> "MERGED" | "OPEN" | "CLOSED"; query: text from the search field.
+export function model(runs, live, now, prState = new Map(), query = "") {
+  const q = String(query ?? "").trim();
   const sorted = [...runs].sort((a, b) => (Date.parse(b.created) || 0) - (Date.parse(a.created) || 0));
-  const open = sorted.filter((r) => r.status === "open").map((run) => {
+  const open = sorted.filter((r) => r.status === "open").map((r) => filterRun(r, q)).filter(Boolean).map((run) => {
     const address = addressOn(run.machine, run.chef);
     const chef = address ? { address, name: live.get(address)?.name || address,
       msg: message(live.get(address)), target: targetOn(run.machine, address) } : null;
@@ -157,12 +179,16 @@ export function model(runs, live, now) {
     rows.sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
     return { run, chef, rows };
   });
-  const served = sorted.filter((r) => r.status !== "open").slice(0, 5).map((run) => {
+  const closed = sorted.filter((r) => r.status !== "open");
+  const shown = q ? closed.filter((r) => filterRun(r, q)).slice(0, SERVED_FOUND) : closed.slice(0, SERVED_SHOWN);
+  const served = shown.map((run) => {
     const finished = (run.tasks ?? []).map((task) => Date.parse(task.finished)).filter(Number.isFinite);
     return { run, key: `${run.machine || "."}:${run.id}:served`, title: run.title ?? run.id,
       count: (run.tasks ?? []).length,
       duration: finished.length ? duration(Math.max(...finished) - Date.parse(run.created)) : "",
-      pr: run.pr ?? null, target: run.pr ? { url: run.pr } : null };
+      pr: run.pr ?? null, pr_state: prWord(run.pr, prState), target: run.pr ? { url: run.pr } : null };
   });
+  // Runs whose PR is still open first; the sort is stable, so the rest stay newest first.
+  served.sort((a, b) => (b.pr_state === "pr open") - (a.pr_state === "pr open"));
   return { open, served };
 }
