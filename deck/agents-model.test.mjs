@@ -8,7 +8,7 @@ assert.deepEqual([shortApp("claude-code"), shortApp("antigravity"), shortApp("ag
 
 const ag = (address, status, space, app = "claude", tab = "a") => ({ address, status, app, program: app, space, space_name: `sp-${space}`, tab_name: tab });
 const agents = [ag("t1", "idle", "s1"), ag("t2", "working", "s1", "codex"), ag("r/t3", "blocked", "s2"), ag("t4", "working", "s1", "claude", "0"), ag("t5", "done", "s1")];
-const spaces = [{ space: "s1" }, { space: "s2", machine: "r" }];
+const spaces = [{ id: "s1" }, { id: "s2", machine: "r" }];
 const terminals = [{ address: "t2", report: { msg: "building" } }];
 const probe = {
   here: { agents: { t2: { cpu: 2, rssKiB: 2048, created_ms: 1000, repo: "api", branch: "main", history: [1, 2] }, t4: { cpu: 5, rssKiB: null, history: [] } } },

@@ -29,7 +29,7 @@ export function fmtAge(ms) {
 export const fmtCpu = (v) => (Number.isFinite(v) ? v.toFixed(1) : "-");
 
 export function build({ agents, spaces, terminals, probe, now }) {
-  const machineOf = new Map(spaces.map((s) => [s.space, s.machine ?? null]));
+  const machineOf = new Map(spaces.map((s) => [s.id, s.machine ?? null]));
   const reported = new Map(terminals.map((t) => [t.address, t.report?.msg]));
   const rows = agents.map((a) => {
     const machine = machineOf.get(a.space) ?? null;
