@@ -18,3 +18,19 @@ export const SIZES = [
   { label: "XL", width: 1720, height: 980 },
 ];
 export const sizeIndex = (i) => (Number.isInteger(i) ? Math.max(0, Math.min(SIZES.length - 1, i)) : 0);
+
+// Deck draws its own window frame (mod.json frame "none"), so its corners can follow the
+// layout: the smallest pane radius it names (Arcade's 0 is square), else 8.
+export function cornerRadius(node) {
+  const radii = [];
+  const walk = (n) => {
+    if (!n || typeof n !== "object") return;
+    if (typeof n.pane?.radius === "number") radii.push(n.pane.radius);
+    for (const v of Object.values(n)) if (v && typeof v === "object") walk(v);
+  };
+  walk(node);
+  return radii.length ? Math.min(...radii) : 8;
+}
+
+// Without Herdr's frame nothing paints behind Deck: theme colors with alpha (#rrggbbaa) become opaque.
+export const solid = (c) => (typeof c === "string" && /^#[0-9a-f]{8}$/i.test(c) ? c.slice(0, 7) : c);

@@ -9,6 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { agents, spaces, terminals, exec, shared, setShared } from "herdr";
 import { build, summary, fmtMem, fmtCpu, filterRows, filterFinished, finishedTasks, isTask, departed, ended, remember } from "../agents-model.js";
 import { thenNotify } from "../frame.js";
+import { AGENT_MAX } from "../probe.js";
 import { panel, table, glyph, dot, sparkline, num, textButton } from "../ui.js";
 
 // Same key and size as the old task board, so its history carries over.
@@ -63,6 +64,8 @@ function modelOf(probe) {
   return memo.value;
 }
 
+const padLeft = (h, n) => { const s = (h ?? []).slice(-n); return Array(n - s.length).fill(null).concat(s); };
+
 export default {
   id: "agents",
   label: "agents",
@@ -104,7 +107,7 @@ export default {
           h_flex().gap(5).items_center().min_w(0).child(dot(t, c, 6)).child(div().truncate().text_color(c).when(r.state === "blocked", (el) => el.font_semibold()).child(r.word)),
           where,
           div().truncate().text_color(t.muted).child(r.doing),
-          sparkline(t, r.history.slice(-range), t.ansi2, { width: 90 }),
+          sparkline(t, padLeft(r.history, Math.min(range, AGENT_MAX)), t.ansi2, { width: 90 }),
           num(t, fmtCpu(r.cpu), r.cpu == null ? t.dim : t.foreground, 40),
           num(t, fmtMem(r.rssKiB), r.rssKiB == null ? t.dim : t.foreground, 48),
           num(t, r.age, t.dim, 40),

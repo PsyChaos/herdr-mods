@@ -37,8 +37,9 @@ spacing and boxes look like a generic dialog, not a monitor.
 - Colors come from the Herdr theme (`theme()` tokens and `ansi0..15`), so the
   look follows the user's theme; no fixed palette.
 - Nothing samples while the window is closed (as today). History lives in
-  module scope, so closing and reopening within a Herdr session keeps the
-  charts (with a gap for the closed time); a Herdr restart starts them empty.
+  module scope but is cleared on every open (2026-11-19, the user's choice:
+  gaps for the closed time looked broken), so charts start empty and fill
+  from the right.
   Accepted.
 
 ## Non-Goals

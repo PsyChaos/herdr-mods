@@ -42,7 +42,8 @@ typing, j/k/digits/tab are text.
 Every 4 s while open each tab loads on its own (a slow tab never delays another) and the view redraws (nothing runs while the
 window is closed). Separately, every 5 s `probe.js` runs one `sh` script per
 machine (`exec ... {on}`, 3 s timeout) and keeps ring buffers of at most 120
-samples in module scope, so charts survive close and reopen. Pure functions
+samples; every open clears them, so charts start empty and fill from the right
+(nothing samples while closed). Pure functions
 (`parse`, `step`, `tree`, `record`) are tested by `node deck/probe.test.mjs`
 against `fixture/probe-here.txt`. Range (24/60/120 samples) is `this.range`.
 
@@ -103,6 +104,13 @@ The header's `S M L XL` control (and `+` / `-`) picks 980x620, 1200x760,
 names, so Deck writes the chosen size into its installed `mod.json`, closes its
 window and opens it again with `mod.open` (same spot). Copying Deck over it
 again resets the size to `S`.
+
+## Window frame
+
+`mod.json` asks for `"frame": "none"`: Deck draws its own border and an opaque
+theme background, with corners that follow the layout (the smallest pane
+`radius` it names; Arcade's 0 gives square corners, else 8). Herdr's own frame
+is always rounded.
 
 ## One tab in a layout
 
