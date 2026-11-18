@@ -52,7 +52,7 @@ export default {
   async load({ machines }) {
     for (const m of machines) askExtras(m);
     // Only an exec that rejected means the machine cannot be reached.
-    return { state: null, machines: Object.fromEntries(machines.map((m) => [m, extras.get(m ?? "here")?.reached === false ? "error" : "ok"])) };
+    return { state: null, machines: Object.fromEntries(machines.map((m) => [m ?? "here", extras.get(m ?? "here")?.reached === false ? "error" : "ok"])) };
   },
   count: (_state, probe) => names(probe).filter((m) => probe[m].ok).length,
   blocked: () => false,
