@@ -16,15 +16,17 @@ let programsAsked = false;
 
 // With the `board` prop (a fixture) nothing is live, so the board itself says who works.
 // One model per render: count, blocked, rows and view share it for 100 ms.
-let memo = { state: null, query: "", at: 0, value: null };
+// Keyed by query: count/blocked (no query) and rows/view (the query) don't evict each other.
+let memo = { state: null, at: 0, byQuery: new Map() };
 function modelOf(state, query = "") {
   const now = Date.now();
-  if (memo.state !== state || memo.query !== query || now - memo.at > 100) {
+  if (memo.state !== state || now - memo.at > 100) memo = { state, at: now, byQuery: new Map() };
+  if (!memo.byQuery.has(query)) {
     const live = state.fixture ? fixtureLive(state.boards) : liveMap(terminals(), agents());
     const known = new Map([...prs].filter(([, v]) => v.state).map(([url, v]) => [url, v.state]));
-    memo = { state, query, at: now, value: model(state.runs, live, now, known, query) };
+    memo.byQuery.set(query, model(state.runs, live, now, known, query));
   }
-  return memo.value;
+  return memo.byQuery.get(query);
 }
 
 // PR state of served runs, asked of gh in the background: MERGED and CLOSED are final, OPEN is
@@ -207,7 +209,9 @@ export default {
           .child(div().w(50).flex_none().text_size(10.5).text_color(t.dim).child(text(s.duration) || "-"))
           .child(div().w(40).flex_none().text_size(10.5).text_color(t.accent).child(s.pr ? `#${String(s.pr).match(/(\d+)\/?$/)?.[1] ?? "PR"} ↗` : ""))) })
       : null;
-    const empty = m.open.length || query ? [] : [div().mx(12).mt(12).text_color(t.dim).child("No open run. Start one with swarm new.")];
+    const empty = m.open.length ? []
+      : query ? (m.served.length ? [] : [div().mx(12).mt(12).text_color(t.dim).child(`No match for "${query}".`)])
+      : [div().mx(12).mt(12).text_color(t.dim).child("No open run. Start one with swarm new.")];
     return v_flex().id("swarm-body").flex_1().min_h(0).pb(12).overflow_y_scrollbar()
       .children(empty).children(m.open.map(runBox)).children(served ? [served] : []);
   },

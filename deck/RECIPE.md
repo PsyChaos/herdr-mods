@@ -64,8 +64,8 @@ deck/swarm-model.test.mjs`). Hidden prop `board`: a local file to read instead
 ## Adding a tab
 
 Create `tabs/<id>.js` exporting `{id, label, icon, load(ctx), count(state,
-probe), blocked(state, probe), rows(state, probe), view(state, sel, cx, pick,
-{range, probe, t})}` and add it to `TABS` in `main.js`. `icon` is a Lucide name
+probe), blocked(state, probe), rows(state, probe, query), view(state, sel, cx, pick,
+{range, probe, t, query})}` and add it to `TABS` in `main.js`. `icon` is a Lucide name
 (a file in `icons/`); `t` is `theme()`; `query` is the text of the search field (`""` when none): filter your rows and view by it, or ignore it. `state` is `null` until the first load.
 
 - `load({machines, state, board, probe})` -> `Promise<{state, machines: {name:

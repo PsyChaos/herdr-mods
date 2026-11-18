@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { build, summary, fmtMem, fmtAge, fmtCpu, shortApp } from "./agents-model.js";
+import { build, summary, fmtMem, fmtAge, fmtCpu, shortApp, filterRows } from "./agents-model.js";
 
 assert.deepEqual([fmtMem(1.4 * 1024 * 1024), fmtMem(612 * 1024), fmtMem(null)], ["1.4G", "612M", "-"]);
 assert.deepEqual([fmtAge(30e3), fmtAge(42 * 60e3), fmtAge(3 * 3600e3), fmtAge(2 * 86400e3), fmtAge(null)], ["<1m", "42m", "3h", "2d", "-"]);
@@ -22,4 +22,6 @@ assert.deepEqual([m.rows[0].word, m.rows[0].machine, m.rows[0].place, m.rows[0].
 assert.deepEqual(m.rows.find((r) => r.key === "t2").program, { key: "codex", icon: "codex.svg" });
 assert.equal(summary(m), "2 working · claude uses most");
 assert.equal(summary(build({ agents, spaces, terminals, probe: {}, now: 0 })), "2 working"); // no CPU yet
+assert.deepEqual(filterRows(m.rows, "API main").map((r) => r.key), ["t2"]);
+assert.equal(filterRows(m.rows, "").length, m.rows.length);
 console.log("ok agents-model");

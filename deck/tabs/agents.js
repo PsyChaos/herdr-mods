@@ -5,7 +5,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, spaces, terminals } from "herdr";
-import { build, summary, fmtMem, fmtCpu } from "../agents-model.js";
+import { build, summary, fmtMem, fmtCpu, filterRows } from "../agents-model.js";
 import { panel, table, glyph, dot, sparkline, num } from "../ui.js";
 
 // One model per render: count, blocked, rows and view share it for 100 ms.
@@ -25,12 +25,13 @@ export default {
 
   async load() { return { state: null, machines: {} }; },
 
-  rows: (_state, probe) => modelOf(probe).rows.map((r) => ({ key: r.key, target: r.target })),
+  rows: (_state, probe, query) => filterRows(modelOf(probe).rows, query).map((r) => ({ key: r.key, target: r.target })),
   count: (_state, probe) => modelOf(probe).rows.length,
   blocked: (_state, probe) => modelOf(probe).rows.some((r) => r.state === "blocked"),
 
-  view(_state, sel, _cx, pick, { t, probe, range }) {
-    const m = modelOf(probe);
+  view(_state, sel, _cx, pick, { t, probe, range, query }) {
+    const all = modelOf(probe);
+    const m = { ...all, rows: filterRows(all.rows, query) };
     const columns = [
       { label: "agent", w: 120 },
       { label: "state", w: 86 },

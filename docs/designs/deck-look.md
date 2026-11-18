@@ -271,7 +271,7 @@ state dots as in Agents, the stage rail kept. With no open run: one dim line
   id/title, worker name, provider and model (every word must match); a run that
   matches only through tasks shows just those tasks. With a query, served
   searches all closed runs and shows up to 20. Overview ignores the query;
-  Agents filtering comes with the Agents tab.
+  Agents matches agent name, app, repo, branch, space/tab and what it is doing.
 
 ## Alternatives Considered
 

@@ -53,3 +53,13 @@ export function build({ agents, spaces, terminals, probe, now }) {
 }
 
 export const summary = (m) => `${m.working} working${m.top ? ` · ${m.top} uses most` : ""}`;
+
+// Case-insensitive: every word of the query must appear in one of the row's fields.
+export function filterRows(rows, query) {
+  const words = String(query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return rows;
+  return rows.filter((r) => {
+    const hay = [r.key, r.app, r.repo, r.branch, r.place, r.doing, r.machine].filter(Boolean).join(" ").toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
