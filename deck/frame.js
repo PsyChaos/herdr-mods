@@ -9,3 +9,12 @@ export const thenNotify = (fn) => (cx) => { fn(cx); cx.notify(); };
 
 // The tab id asked for by shared("deck.tab") ({id, at}) when it is fresh and newer than `consumed`, else null.
 export const askedTab = (want, consumed, now, maxAge) => (want?.at > now - maxAge && want.at > consumed ? want.id : null);
+
+// Window sizes (S is mod.json's). The chosen one is kept in shared("deck.size") as an index.
+export const SIZES = [
+  { label: "S", width: 980, height: 620 },
+  { label: "M", width: 1200, height: 760 },
+  { label: "L", width: 1440, height: 880 },
+  { label: "XL", width: 1720, height: 980 },
+];
+export const sizeIndex = (i) => (Number.isInteger(i) ? Math.max(0, Math.min(SIZES.length - 1, i)) : 0);

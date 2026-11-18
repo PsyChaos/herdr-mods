@@ -10,9 +10,9 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay, shared } from "herdr";
+import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay, shared, readTextFile, writeTextFile, appHome } from "herdr";
 import { dot, mono, icon, chip, segmented, confirm, note, openUrl } from "./ui.js";
-import { machineBad, askedTab } from "./frame.js";
+import { machineBad, askedTab, SIZES, sizeIndex } from "./frame.js";
 import { probeAll } from "./probe.js";
 import overview from "./tabs/overview.js";
 import agentsTab from "./tabs/agents.js";
@@ -25,6 +25,7 @@ import docker from "./tabs/docker.js";
 
 const TABS = [overview, agentsTab, swarm, team, usage, prs, ports, docker];
 const TICK_MS = 4000;
+const MOD_JSON = () => `${appHome()}/mods/deck/mod.json`;
 const PROBED = new Set(["overview", "agents"]); // tabs that read ctx.probe
 const PROBE_MS = 5000;
 const RANGES = [{ label: "2m", n: 24 }, { label: "5m", n: 60 }, { label: "10m", n: 120 }];
@@ -54,6 +55,13 @@ export default class Deck extends View {
     // Embedded: a layout block with props {tab} shows only that tab, without header or tab strip.
     this.only = TABS.find((x) => x.id === props()?.tab) ?? null;
     if (this.only) this.active = TABS.indexOf(this.only);
+    this.size = 0; // read from mod.json below
+    if (!this.only) cx.spawn(async (cx) => {
+      const json = await readTextFile(MOD_JSON()).catch(() => null);
+      const w = json && JSON.parse(json).overlay?.width;
+      this.size = Math.max(0, SIZES.findIndex((s) => s.width === w));
+      cx.notify();
+    });
     this.h = cx.focus_handle();
     if (!this.only) { // an embedded block must not take the keyboard from the terminals
       this.h.focus();
@@ -183,6 +191,8 @@ export default class Deck extends View {
       return void cx.notify();
     }
     if (k === "/") this.searching = true;
+    else if (!this.only && (k === "+" || k === "=" || k === "shift-=")) return void this.resize(this.size + 1, cx);
+    else if (!this.only && k === "-") return void this.resize(this.size - 1, cx);
     else if (k === "escape" && this.query) this.query = "";
     else if (k === "j" || k === "down") this.move(1);
     else if (k === "k" || k === "up") this.move(-1);
@@ -203,12 +213,33 @@ export default class Deck extends View {
     return m.ok && !machineBad(this.results, name) ? "ok" : "error";
   }
 
+  // Ctrl+Shift+I (mod.open) opens the window mod.json describes, so the size is written there;
+  // then the window is reopened by mod.open, in its remembered spot.
+  resize(i, cx) {
+    const n = sizeIndex(i);
+    if (n === this.size || this.resizing) return;
+    this.resizing = true;
+    const overlay = props()?.overlay;
+    cx.spawn(async () => {
+      try {
+        const old = await readTextFile(MOD_JSON());
+        const spec = JSON.parse(old);
+        spec.overlay = { ...spec.overlay, width: SIZES[n].width, height: SIZES[n].height };
+        await writeTextFile(MOD_JSON(), JSON.stringify(spec, null, 2) + "\n", old);
+        closeOverlay(overlay);
+        run("mod.open", { name: "deck" });
+      } catch { this.resizing = false; }
+    });
+  }
+
   header(t) {
     const names = machineList().map((m) => m.name).sort();
     return h_flex().h(40).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border).bg(t.chrome)
       .child(div().flex_none().font_semibold().text_size(13).text_color(t.foreground).child("deck"))
       .children(["here", ...names].map((n) => chip(t, n, this.health(n))))
       .child(div().flex_1())
+      .child(segmented(t, { id: "deck-size", options: SIZES.map((s) => s.label), selected: this.size,
+        onSelect: (i, cx) => { this.h.focus(); this.resize(i, cx); } }))
       .child(segmented(t, { id: "deck-range", options: RANGES.map((r) => r.label), selected: RANGES.findIndex((r) => r.n === this.range),
         onSelect: (i, cx) => { this.h.focus(); this.range = RANGES[i].n; cx.notify(); } }))
       .child(div().id("deck-close").flex_none().w(22).h(22).flex().items_center().justify_center().rounded(5).cursor_pointer()
