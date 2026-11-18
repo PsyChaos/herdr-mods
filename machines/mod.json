@@ -1,5 +1,0 @@
-{
-  "place": "none",
-  "title": "Machines",
-  "overlay": { "kind": "window", "key": "machines", "width": 600, "height": 700 }
-}

@@ -13,15 +13,9 @@ import { keys, exec, appHome, readTextFile } from "herdr";
 const SELF = "palette-plus";
 // Shown even without a key; [title, search words].
 const KNOWN = {
-  ports: ["Ports", "listening port kill stop tunnel localhost server"],
-  docker: ["Docker", "containers compose logs shell start stop restart images"],
-  ci: ["PRs & CI", "pull request github actions checks build failed"],
-  machines: ["Machines", "cpu memory ram disk docker containers load"],
+  deck: ["Deck", "overview agents swarm team usage limits prs ci ports docker containers cpu memory tasks"],
   browser: ["Open in browser", "web page url file html localhost"],
-  "task-board": ["Task board", "tasks helpers agents"],
   attach: ["Add files to an agent", "attach image picture screenshot file upload drop paste"],
-  team: ["Agent team", "agents talk message each other worktrees branches conflicts files changed collaborate introduce"],
-  "usage-board": ["Usage", "limits tokens claude codex opencode quota"],
 };
 // The "Mods" group comes right after "Recent".
 const ORDER = [GROUPS[0], "Mods", ...GROUPS.slice(1)];

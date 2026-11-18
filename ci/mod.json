@@ -1,5 +1,0 @@
-{
-  "place": "none",
-  "title": "PRs & CI",
-  "overlay": { "kind": "window", "key": "ci", "width": 620, "height": 640 }
-}

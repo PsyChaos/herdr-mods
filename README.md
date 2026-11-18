@@ -5,21 +5,13 @@ agents at once.
 
 | Mod | What it shows |
 |---|---|
-| [`task-board`](task-board/) | **Task board.** Which agent hands out work, which tasks it started, which provider runs each one, for how long, and how it ended. |
-| [`usage-board`](usage-board/) | **Usage.** How full each provider's 5-hour and weekly limits are on every Herdr machine, and when they reset. Claude Code, Codex and Antigravity included; OpenCode, which has no limits of its own, shows today's and this week's tokens. |
+| [`deck`](deck/) | **Deck.** One console window for the herd, a tab per subject: **overview** (CPU, memory, disks, busiest processes and containers of every Herdr machine), **agents** (every agent and the helpers it started, what each is doing, CPU and memory), **swarm** (every swarm task, who works on it, its stage and review findings), **team** (agents per repository and worktree, changed files, clashes, their messages), **usage** (5-hour and weekly limits per provider and machine), **prs** (open PRs and CI runs per space, failed logs, notifications), **ports** (who listens where; open, tunnel, stop) and **docker** (containers by compose project; start, stop, logs, shell). Keyboard first: `1`..`8`, `j`/`k`, Enter, `/` to search. |
 | [`browser`](browser/) | **Browser.** Opens a web page in a pane beside your agents. Pick another Herdr machine and its `localhost` opens, no port forwarding. |
-| [`ports`](ports/) | **Ports.** Which program or container listens on which port, on every Herdr machine, and which terminal started it. Search them, open a page in the browser, jump to its terminal, or stop it. |
-| [`docker`](docker/) | **Docker.** The containers of every Herdr machine in one list, by compose project. Search them, show only running or stopped ones, start, stop and restart them, and open their live logs or a shell in them as a terminal. |
-| [`machines`](machines/) | **Machines.** CPU, memory, disks and the busiest processes of every Herdr machine, and how many Docker containers run there, with a link to the Docker panel. |
-| [`deck`](deck/) | **Deck.** One console window with a tab per subject. Its Swarm tab shows every swarm task on every Herdr machine: who works on it, what they are doing now, its stage and why a review sent it back. Keyboard first (`j`/`k`, Enter, `1`..`9`). |
 | [`attach`](attach/) | **Add files.** Pick files, or drop them on its window, and they go into an agent's input as paths: images arrive attached like a pasted one. For an agent on another machine the files are sent there first. |
-| [`team`](team/) | **Agent team.** Agents in one repository, on one branch or in different worktrees, message each other with the `herdr-team` command. The window shows who works where, the files each worktree changed, clashes, and what the agents said; "Introduce" tells them about each other. |
-| [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these panels and any mod you gave a key, with their keys. |
-| [`ci`](ci/) | **PRs & CI.** The open pull requests and CI runs of every repository in your spaces, on every Herdr machine, grouped by space. Notifies when a run finishes and shows a failed step's log, ready to copy to an agent. |
+| [`palette-plus`](palette-plus/) | **Palette.** Herdr's command palette (Ctrl+Shift+P) with a "Mods" group: these mods and any mod you gave a key, with their keys. |
+| [`team/herdr-team`](team/) | **Agent team command.** Agents in one repository, on one branch or in different worktrees, message each other with `herdr-team`; Deck's team tab shows it. |
 
 <p>
-  <img src="task-board/preview.png" alt="Task board" width="258">
-  <img src="usage-board/preview.png" alt="Usage board" width="258">
   <img src="browser/preview.png" alt="Open in browser" width="300">
 </p>
 
@@ -27,20 +19,13 @@ agents at once.
 
 ```sh
 git clone https://github.com/PsyChaos/herdr-mods
-cp -r herdr-mods/task-board herdr-mods/usage-board herdr-mods/browser herdr-mods/ports herdr-mods/docker herdr-mods/ci herdr-mods/machines herdr-mods/attach herdr-mods/team herdr-mods/palette-plus herdr-mods/deck ~/.config/herdr-app/mods/
+cp -r herdr-mods/deck herdr-mods/browser herdr-mods/attach herdr-mods/palette-plus ~/.config/herdr-app/mods/
 ~/.config/herdr-app/mods/palette-plus/sync.sh
-herdr-app check ~/.config/herdr-app/mods/task-board
-herdr-app check ~/.config/herdr-app/mods/usage-board
-herdr-app check ~/.config/herdr-app/mods/browser
-herdr-app check ~/.config/herdr-app/mods/ports
-herdr-app check ~/.config/herdr-app/mods/docker
-herdr-app check ~/.config/herdr-app/mods/ci
-herdr-app check ~/.config/herdr-app/mods/machines
-herdr-app check ~/.config/herdr-app/mods/attach
-herdr-app check ~/.config/herdr-app/mods/team
 herdr-app check ~/.config/herdr-app/mods/deck
-install -m 755 herdr-mods/team/herdr-team ~/.local/bin/ && herdr-team setup   # on every Herdr machine
+herdr-app check ~/.config/herdr-app/mods/browser
+herdr-app check ~/.config/herdr-app/mods/attach
 herdr-app check ~/.config/herdr-app/mods/palette-plus
+install -m 755 herdr-mods/team/herdr-team ~/.local/bin/ && herdr-team setup   # on every Herdr machine
 ```
 
 The browser mod also needs [terminal-browser](https://github.com/zenbu-labs/terminal-browser)
@@ -55,25 +40,17 @@ Then add the keys from each mod's `keys.json` to `~/.config/herdr-app/keys.json`
 
 ```json
 "global": {
-  "ctrl-shift-g": "mod.open:task-board",
-  "ctrl-shift-j": "mod.open:usage-board",
+  "ctrl-shift-i": "mod.open:deck",
   "ctrl-shift-u": "mod.open:browser",
-  "ctrl-shift-y": "mod.open:ports",
-  "ctrl-shift-s": "mod.open:docker",
-  "ctrl-shift-r": "mod.open:ci",
-  "ctrl-shift-m": "mod.open:machines",
   "ctrl-shift-a": "mod.open:attach",
-  "ctrl-shift-d": "mod.open:team",
-  "ctrl-shift-p": "mod.open:palette-plus",
-  "ctrl-shift-i": "mod.open:deck"
+  "ctrl-shift-p": "mod.open:palette-plus"
 }
 ```
 
-`Ctrl+Shift+G` and `Ctrl+Shift+J` now open each panel as a window you can drag
-anywhere; it comes back after a restart until you close it. `Ctrl+Shift+U`
-asks for an address to open, `Ctrl+Shift+Y` lists the ports, `Ctrl+Shift+S` the Docker containers, `Ctrl+Shift+R` shows PRs and CI, and
-`Ctrl+Shift+M` the machines, `Ctrl+Shift+A` adds files to an agent, and `Ctrl+Shift+D` shows your agents by repository. `Ctrl+Shift+I` opens the Deck console. `Ctrl+Shift+P` replaces Herdr's palette with one
-that lists all of these.
+`Ctrl+Shift+I` opens Deck on the tab you used last; it comes back after a
+restart until you close it. `Ctrl+Shift+U` asks for an address to open,
+`Ctrl+Shift+A` adds files to an agent, and `Ctrl+Shift+P` replaces Herdr's
+palette with one that lists all of these.
 
 An agent in Herdr can do all of this for you: ask it to add the mods from this
 repository. Each folder has a `RECIPE.md` it can follow.
