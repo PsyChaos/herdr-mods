@@ -108,3 +108,6 @@ export function stateColor(t, c) {
   if (c.state === "dead") return t.blocked;
   return t.dim;
 }
+
+// A finished action's lock ends once a published snapshot is from a read made after the action.
+export const released = (entry, snapshotAt) => Boolean(entry?.after) && snapshotAt >= entry.after;

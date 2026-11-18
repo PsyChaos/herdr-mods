@@ -5,7 +5,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { terminals, panes, spaces, run, exec, hc, focused, shared, setShared } from "herdr";
-import { PROBE, machineLabel, FILTERS, isUp, passes, matches, projects, stateColor } from "../docker-model.js";
+import { PROBE, machineLabel, FILTERS, isUp, passes, matches, projects, stateColor, released } from "../docker-model.js";
 import { panel, table, chips, rowButton, dot } from "../ui.js";
 
 const REFRESH_MS = 10000;
@@ -85,7 +85,8 @@ function act(machine, c, verb, cx) {
   cx.spawn(async (cx) => {
     const r = await onMachine(machine, ["docker", verb, c.id]).catch((e) => ({ code: 1, stderr: String(e) }));
     await read(machine);
-    if (r.code === 0) delete busy[id];
+    // Success: the lock stays until a published snapshot holds the refreshed read (see view()).
+    if (r.code === 0) busy[id] = { ...busy[id], after: results[machineLabel(machine)]?.at };
     else { busy[id] = { error: `${ACTIONS[verb].label} failed: ${errorOf(r)}` }; say(`${ACTIONS[verb].label} ${c.name} failed`, "error"); }
     cx.notify();
   });
@@ -157,6 +158,7 @@ const filterOf = () => {
 const wordsOf = (query) => (query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
 
 export default {
+  ui,
   id: "docker",
   label: "docker",
   icon: "container",
@@ -210,6 +212,7 @@ export default {
       for (const p of projects(shown)) {
         const rows = p.containers.map((c) => {
           const id = `${name}/${c.id}`;
+          if (released(busy[id], result.at)) delete busy[id]; // the snapshot is fresh now
           const up = c.state === "running";
           const acting = Boolean(busy[id]?.text);
           const verbs = c.state === "paused" ? ["unpause", "stop"] : isUp(c) ? ["restart", "stop"] : ["start"];

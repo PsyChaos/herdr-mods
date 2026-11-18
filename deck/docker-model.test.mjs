@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { passes, matches, projects, isUp, machineLabel } from "./docker-model.js";
+import { readFileSync } from "node:fs";
+import { released, passes, matches, projects, isUp, machineLabel } from "./docker-model.js";
 
 const c = (name, state, extra = {}) => ({ id: name, name, image: "img", state, status: state, ports: [], project: null, folder: null, service: null, ...extra });
 const web = c("shop-web-1", "running", { project: "shop", folder: "~/shop", service: "web", ports: ["8080->80"], image: "nginx" });
@@ -22,5 +23,12 @@ const groups = projects([lone, db, web]);
 assert.deepEqual(groups.map((g) => [g.name, g.up, g.containers.map((x) => x.name)]),
   [["shop", 1, ["shop-db-1", "shop-web-1"]], [null, 1, ["lone"]]]);
 assert.deepEqual(projects([db, c("z", "exited"), c("a", "running", { project: "a" })]).map((g) => g.name), ["a", "shop", null]);
+
+// A finished Start keeps its lock while the published snapshot is older than the read after it.
+assert.equal(released({ text: "starting…" }, 5), false); // still running
+assert.equal(released({ text: "starting…", after: 10 }, 5), false); // old snapshot
+assert.equal(released({ text: "starting…", after: 10 }, 10), true);
+// The default export carries the same ui object as the named export.
+assert.match(readFileSync(new URL("./tabs/docker.js", import.meta.url), "utf8"), /export default \{\n  ui,/);
 
 console.log("ok docker-model");
