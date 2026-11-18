@@ -12,7 +12,7 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay, shared } from "herdr";
 import { dot, mono, icon, chip, segmented, confirm, note, openUrl } from "./ui.js";
-import { machineBad } from "./frame.js";
+import { machineBad, askedTab } from "./frame.js";
 import { probeAll } from "./probe.js";
 import overview from "./tabs/overview.js";
 import agentsTab from "./tabs/agents.js";
@@ -48,6 +48,7 @@ export default class Deck extends View {
     this.searching = false; // typing into the search field
     const want = shared("deck.tab");
     const id = want?.at > Date.now() - TAB_FRESH_MS ? want.id : lastTab;
+    this.tabAt = want?.at ?? 0; // init consumed it
     this.active = Math.max(0, TABS.findIndex((x) => x.id === id));
     this.h = cx.focus_handle();
     this.h.focus();
@@ -81,6 +82,12 @@ export default class Deck extends View {
 
   // Each tab loads on its own: a slow one never delays another.
   tick(cx) {
+    const asked = askedTab(shared("deck.tab"), this.tabAt ?? 0, Date.now(), TAB_FRESH_MS); // e.g. a CI notification
+    if (asked) {
+      this.tabAt = shared("deck.tab").at;
+      this.active = Math.max(0, TABS.findIndex((x) => x.id === asked));
+      this.h.focus();
+    }
     const names = machineList().filter((m) => m.layout !== "unavailable").map((m) => m.name);
     const board = props()?.board;
     for (const tab of TABS) {
