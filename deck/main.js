@@ -169,7 +169,9 @@ export default class Deck extends View {
       return void cx.notify();
     }
     if (this.searching) {
+      const submit = e.keystroke === "enter" ? this.query : null;
       if (!this.searchKey(e)) return;
+      if (submit !== null) TABS[this.active].submit?.(submit, cx);
       cx.stop_propagation();
       return void cx.notify();
     }
