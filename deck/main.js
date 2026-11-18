@@ -12,6 +12,7 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { machines, panes, agents, spaces, run, exec, theme, props, closeOverlay, shared } from "herdr";
 import { dot, mono, icon, chip, segmented, confirm, note, openUrl } from "./ui.js";
+import { machineBad } from "./frame.js";
 import { probeAll } from "./probe.js";
 import overview from "./tabs/overview.js";
 import agentsTab from "./tabs/agents.js";
@@ -182,10 +183,7 @@ export default class Deck extends View {
   health(name) {
     const m = probes[name];
     if (!m) return "loading";
-    // A tab reports a machine only when it cannot reach it, so any non-"ok" entry is an error.
-    const key = name === "here" ? "null" : name; // load results are keyed by machine name; this computer is null
-    const bad = Object.values(this.results).some((r) => r?.[key] !== undefined && r[key] !== "ok");
-    return m.ok && !bad ? "ok" : "error";
+    return m.ok && !machineBad(this.results, name) ? "ok" : "error";
   }
 
   header(t) {
