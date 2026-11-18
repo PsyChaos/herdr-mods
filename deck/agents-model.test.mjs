@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { build, summary, fmtMem, fmtAge, fmtCpu, shortApp, filterRows, titleOf, statusOf, ended, snapshot, remember, finishedTasks, filterFinished, parentOf } from "./agents-model.js";
+import { build, summary, fmtMem, fmtAge, fmtCpu, shortApp, filterRows, titleOf, statusOf, ended, snapshot, remember, finishedTasks, filterFinished, parentOf, departed } from "./agents-model.js";
 
 assert.deepEqual([fmtMem(1.4 * 1024 * 1024), fmtMem(612 * 1024), fmtMem(null)], ["1.4G", "612M", "-"]);
 assert.deepEqual([fmtAge(30e3), fmtAge(42 * 60e3), fmtAge(3 * 3600e3), fmtAge(2 * 86400e3), fmtAge(null)], ["<1m", "42m", "3h", "2d", "-"]);
@@ -55,4 +55,12 @@ assert.equal(remember(hist, hist[1], 1).length, 1);
 const fin = finishedTasks({ terminals: [{ address: "t10", state: "live", parent: "t1" }, { address: "t11", state: "exited", parent: "t1", exit_code: 0, finished_ms: 7000, created_ms: 1000 }], history: hist, now: 9500 });
 assert.deepEqual(fin.map((f) => [f.key, f.word, f.code]), [["t11", "done", "exit 0"], ["t9", "failed", "exit 1"]]); // t10 is live: its history entry is hidden
 assert.deepEqual(filterFinished(fin, "failed thing").map((f) => f.key), ["t9"]);
+// A task seen by one render and gone by the next is resolved once.
+const seen = new Map(), resolving = new Set();
+assert.deepEqual(departed(seen, resolving, [{ address: "q1", labels: { task: "Quick" } }]), []);
+assert.deepEqual(departed(seen, resolving, []).map(([a, s]) => [a, s.board_title]), [["q1", "Quick"]]);
+assert.deepEqual(departed(seen, resolving, []), []); // already resolving
+// "running" tasks count as working in the summary
+const rn = build({ agents: [], spaces, terminals: [{ address: "q2", state: "live", parent: "x", status: "running" }], probe: {}, now: 0 });
+assert.equal(summary(rn), "1 working");
 console.log("ok agents-model");

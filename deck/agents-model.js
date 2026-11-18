@@ -101,6 +101,15 @@ export function finishedTasks({ terminals, history, now }) {
     .sort((a, b) => b.end - a.end);
 }
 
+// Remembers live tasks in `seen`; returns the [address, snapshot] pairs that left `live` and are not in `resolving`, marking them there.
+export function departed(seen, resolving, live) {
+  for (const t of live) seen.set(t.address, snapshot(t));
+  const here = new Set(live.map((t) => t.address));
+  const gone = [...seen].filter(([a]) => !here.has(a) && !resolving.has(a));
+  for (const [a] of gone) resolving.add(a);
+  return gone;
+}
+
 export function build({ agents, spaces, terminals, probe, now }) {
   const spaceMachine = new Map(spaces.map((s) => [s.id, s.machine ?? null]));
   const byAddress = new Map(terminals.map((t) => [t.address, t]));
@@ -156,7 +165,7 @@ export function build({ agents, spaces, terminals, probe, now }) {
   const byApp = new Map();
   for (const r of rows) if (r.cpu != null) byApp.set(r.app, (byApp.get(r.app) ?? 0) + r.cpu);
   const [top, total] = [...byApp].sort((a, b) => b[1] - a[1])[0] ?? [];
-  return { rows, working: rows.filter((r) => r.state === "working").length, top: total > 0 ? top : null };
+  return { rows, working: rows.filter((r) => r.word === "working").length, top: total > 0 ? top : null };
 }
 
 export const summary = (m) => `${m.working} working${m.top ? ` · ${m.top} uses most` : ""}`;

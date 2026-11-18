@@ -7,7 +7,8 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, spaces, terminals, exec, shared, setShared } from "herdr";
-import { build, summary, fmtMem, fmtCpu, filterRows, filterFinished, finishedTasks, isTask, snapshot, ended, remember } from "../agents-model.js";
+import { build, summary, fmtMem, fmtCpu, filterRows, filterFinished, finishedTasks, isTask, departed, ended, remember } from "../agents-model.js";
+import { thenNotify } from "../frame.js";
 import { panel, table, glyph, dot, sparkline, num, textButton } from "../ui.js";
 
 // Same key and size as the old task board, so its history carries over.
@@ -24,11 +25,7 @@ const seen = new Map();
 const resolving = new Set();
 function track() {
   const live = terminals().filter((t) => isTask(t) && t.state === "live");
-  for (const t of live) seen.set(t.address, snapshot(t));
-  const here = new Set(live.map((t) => t.address));
-  for (const [address, snap] of seen) {
-    if (here.has(address) || resolving.has(address)) continue;
-    resolving.add(address);
+  for (const [address, snap] of departed(seen, resolving, live)) {
     exec("hc", ["get", address])
       .then((r) => JSON.parse(r.stdout))
       .catch(() => ({}))
@@ -60,6 +57,7 @@ let memo = { probe: null, at: 0, value: null };
 function modelOf(probe) {
   const now = Date.now();
   if (memo.probe !== probe || now - memo.at > 100) {
+    track(); // a task can appear and finish between two loads
     memo = { probe, at: now, value: build({ agents: agents(), spaces: spaces(), terminals: terminals(), probe, now }) };
   }
   return memo.value;
@@ -133,7 +131,7 @@ export default {
       };
     });
     const fbody = list.length ? [table(t, fcols, frows, null), h_flex().justify_end()
-      .child(textButton(t, { id: "clear-finished", label: "Clear", destructive: true, onPress: () => askClear(fin.length) }))] : null;
+      .child(textButton(t, { id: "clear-finished", label: "Clear", destructive: true, onPress: thenNotify(() => askClear(fin.length)) }))] : null;
     return v_flex().id("agents-body").flex_1().min_h(0).pb(12).overflow_y_scrollbar()
       .child(panel(t, { id: "agents", icon: "bot", title: "agents", right: summary(m), body }))
       .when(Boolean(fbody), (el) => el.child(panel(t, { id: "finished", icon: "history", title: "finished", right: `${done.length}${done.length > SHOWN ? `, newest ${SHOWN}` : ""}`, body: fbody })));
