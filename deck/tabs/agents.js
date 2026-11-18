@@ -108,14 +108,17 @@ export default {
           num(t, fmtCpu(r.cpu), r.cpu == null ? t.dim : t.foreground, 40),
           num(t, fmtMem(r.rssKiB), r.rssKiB == null ? t.dim : t.foreground, 48),
           num(t, r.age, t.dim, 40),
+          // compact only: a helper row shows its task label, like the old task board
+          h_flex().gap(6).items_center().min_w(0).pl(r.depth * 12).when(r.depth > 0, (el) => el.child(div().flex_none().text_color(t.dim).child("└"))).when(Boolean(pic), (el) => el.child(glyph(t, r.program, 12))) // elements are single-use
+            .child(div().truncate().when(!(r.depth > 0 && r.title), (el) => el.font_semibold()).child(r.depth > 0 && r.title ? r.title : r.app)),
         ],
         onClick: (_e, cx) => pick(r.key, cx),
       };
     });
     // compact (a narrow layout block): agent, state, up only
-    const pickCols = (cols, rs, keep) => compact ? [keep.map((i) => (i === keep[0] ? { ...cols[i], w: undefined } : cols[i])),
+    const pickCols = (cols, rs, keep) => compact ? [keep.map((i, n) => (n === 0 ? { ...(cols[i] ?? cols[0]), w: undefined } : cols[i])),
       rs.map((r) => ({ ...r, cells: keep.map((i) => r.cells[i]) }))] : [cols, rs];
-    const [shownCols, shownRows] = pickCols(columns, rows, [0, 1, 7]);
+    const [shownCols, shownRows] = pickCols(columns, rows, [8, 1, 7]);
     const body = rows.length ? table(t, shownCols, shownRows, sel) : div().text_color(t.dim).child("No agents.");
     const fin = finishedTasks({ terminals: terminals(), history: history(), now: Date.now() });
     const done = filterFinished(fin, query);
