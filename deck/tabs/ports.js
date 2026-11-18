@@ -302,7 +302,7 @@ export default {
       const empty = !r.list.length ? div().text_color(t.dim).child(r.error ?? (r.loading && !r.at ? "reading…" : "Nothing you started listens here.")) : null;
       return panel(t, {
         id: `ports-${machineLabel(r.machine)}`, icon: "plug", title: machineLabel(r.machine), right: state,
-        body: [r.error && r.list.length ? div().text_color(t.blocked).child(r.error) : null, r.list.length ? table(t, columns, body, sel) : empty],
+        body: [r.error && r.list.length ? div().text_color(t.blocked).child(r.error) : null, r.list.length ? table(t, columns, body, sel) : empty].filter(Boolean),
       });
     });
     const found = panels.length === 0 && searching
@@ -311,7 +311,7 @@ export default {
       .child(h_flex().flex_none().px(12).pt(10).gap(8).items_center()
         .child(chips(t, { id: "ports-filter", options: FILTERS.map((label) => ({ label })), selected: showAll ? 1 : 0, onSelect: (i, cx) => { showAll = i === 1; cx.notify(); } }))
         .child(div().text_size(10).text_color(t.dim).child(searching ? "searching everything, hidden ports too" : showAll ? "everything that listens" : `what you started · ${hiddenCount} more hidden`)))
-      .child(v_flex().id("ports-list").flex_1().min_h(0).pb(12).overflow_y_scrollbar().children(panels).child(found)
+      .child(v_flex().id("ports-list").flex_1().min_h(0).pb(12).overflow_y_scrollbar().children(panels).children(found ? [found] : [])
         .child(div().px(12).pt(10).text_size(10).text_color(t.dim).child("network: reachable from other computers. Open: Herdr's browser, through that machine. My browser: yours, through an ssh tunnel for another machine.")));
   },
 };
