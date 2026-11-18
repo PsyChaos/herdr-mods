@@ -109,5 +109,8 @@ export function stateColor(t, c) {
   return t.dim;
 }
 
-// A finished action's lock ends once a published snapshot is from a read made after the action.
-export const released = (entry, snapshotAt) => Boolean(entry?.after) && snapshotAt >= entry.after;
+// A finished action's lock ends once a published snapshot's read generation reaches the post-action read's.
+export const released = (entry, snapshotGen) => Boolean(entry?.after) && snapshotGen >= entry.after;
+
+// A read finishing with generation `gen` is dropped when a newer one was already applied.
+export const isStale = (applied, gen) => gen <= applied;

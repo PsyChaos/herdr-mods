@@ -5,7 +5,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { terminals, panes, spaces, run, exec, hc, focused, shared, setShared } from "herdr";
-import { PROBE, machineLabel, FILTERS, isUp, passes, matches, projects, stateColor, released } from "../docker-model.js";
+import { PROBE, machineLabel, FILTERS, isUp, passes, matches, projects, stateColor, released, isStale } from "../docker-model.js";
 import { panel, table, chips, rowButton, dot } from "../ui.js";
 
 const REFRESH_MS = 10000;
@@ -30,6 +30,7 @@ const errorOf = (r) => (r.stderr || r.stdout || "").trim().split("\n").pop() || 
 
 // Module scope: a load in flight must not overwrite what the user is doing.
 export const ui = { dialog: null, note: null, query: null };
+const issued = {}; // machine label -> newest read generation handed out
 const results = {}; // machine label -> {machine, containers, error, missing, at, loading, reached}
 const busy = {}; // "machine/id" -> {text} | {error}
 const opening = new Set(); // logs/shell labels whose terminal is starting
@@ -50,6 +51,7 @@ async function waitFor(test, cx) {
 // Reads one machine's containers. Only an unreachable machine counts as "reached: false".
 async function read(machine) {
   const key = machineLabel(machine);
+  const gen = (issued[key] = (issued[key] ?? 0) + 1); // before exec: a later read always has a higher one
   const current = results[key];
   results[key] = { containers: [], ...current, machine, loading: true };
   let next = { containers: current?.containers ?? [], reached: true };
@@ -60,7 +62,9 @@ async function read(machine) {
   } catch (e) {
     next.error = `Couldn't read containers: ${String(e?.message ?? e).split("\n")[0]}`;
   }
-  results[key] = { machine, containers: [], ...next, loading: false, at: Date.now() };
+  // A read that started before an applied one may finish after it with older data: drop it.
+  if (isStale(results[key]?.gen ?? 0, gen)) return;
+  results[key] = { machine, containers: [], ...next, loading: false, at: Date.now(), gen };
 }
 
 // Where a logs or shell terminal runs. Herdr puts a terminal's pane only beside a pane of its own
@@ -86,7 +90,7 @@ function act(machine, c, verb, cx) {
     const r = await onMachine(machine, ["docker", verb, c.id]).catch((e) => ({ code: 1, stderr: String(e) }));
     await read(machine);
     // Success: the lock stays until a published snapshot holds the refreshed read (see view()).
-    if (r.code === 0) busy[id] = { ...busy[id], after: results[machineLabel(machine)]?.at };
+    if (r.code === 0) busy[id] = { ...busy[id], after: results[machineLabel(machine)]?.gen };
     else { busy[id] = { error: `${ACTIONS[verb].label} failed: ${errorOf(r)}` }; say(`${ACTIONS[verb].label} ${c.name} failed`, "error"); }
     cx.notify();
   });
@@ -212,7 +216,7 @@ export default {
       for (const p of projects(shown)) {
         const rows = p.containers.map((c) => {
           const id = `${name}/${c.id}`;
-          if (released(busy[id], result.at)) delete busy[id]; // the snapshot is fresh now
+          if (released(busy[id], result.gen)) delete busy[id]; // the snapshot is fresh now
           const up = c.state === "running";
           const acting = Boolean(busy[id]?.text);
           const verbs = c.state === "paused" ? ["unpause", "stop"] : isUp(c) ? ["restart", "stop"] : ["start"];

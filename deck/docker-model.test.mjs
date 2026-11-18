@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { released, passes, matches, projects, isUp, machineLabel } from "./docker-model.js";
+import { released, isStale, passes, matches, projects, isUp, machineLabel } from "./docker-model.js";
 
 const c = (name, state, extra = {}) => ({ id: name, name, image: "img", state, status: state, ports: [], project: null, folder: null, service: null, ...extra });
 const web = c("shop-web-1", "running", { project: "shop", folder: "~/shop", service: "web", ports: ["8080->80"], image: "nginx" });
@@ -28,6 +28,13 @@ assert.deepEqual(projects([db, c("z", "exited"), c("a", "running", { project: "a
 assert.equal(released({ text: "starting…" }, 5), false); // still running
 assert.equal(released({ text: "starting…", after: 10 }, 5), false); // old snapshot
 assert.equal(released({ text: "starting…", after: 10 }, 10), true);
+// Poll (gen 1) starts, Start runs, post-Start read (gen 2) applies, then the poll finishes: dropped,
+// and the lock holds until a snapshot of generation 2.
+assert.equal(isStale(2, 1), true);
+assert.equal(isStale(0, 1), false);
+const lock = { text: "starting…", after: 2 };
+assert.equal(released(lock, 1), false); // the old poll can't free Start
+assert.equal(released(lock, 2), true);
 // The default export carries the same ui object as the named export.
 assert.match(readFileSync(new URL("./tabs/docker.js", import.meta.url), "utf8"), /export default \{\n  ui,/);
 
