@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { model, mergeBoards, addressOn, shortModel, providerKey, EFFORT, duration, STAGES, liveMap, fixtureLive } from "./swarm-model.js";
+import { matches, filterRun, prWord, model, mergeBoards, addressOn, shortModel, providerKey, EFFORT, duration, STAGES, liveMap, fixtureLive } from "./swarm-model.js";
 
 const now = Date.parse("2026-11-18T12:00:00Z");
 const task = { id: "T1", title: "Build", terminal: "t1", provider: "codex", model: "gpt-6.1-sol", effort: "medium",
@@ -188,4 +188,23 @@ assert.deepEqual(remoteFixture.get("hub/t60"), { status: "working", msg: "Inspec
 assert.equal(remoteFixture.has("t1"), false);
 assert.equal(JSON.stringify(fixture), fixtureBefore);
 assert.deepEqual(fixtureLive(new Map()), new Map());
+// PR state words, served order (open PR first, then newest) and the query filter
+const closedRun = (id, created, pr, title = id) => ({ id, status: "closed", created, pr, title, repo_name: "demo", tasks: [{ id: "T1", title: "Build " + id, name: "thor", provider: "codex", model: "gpt-6.1-sol" }] });
+const prs = new Map([["u/1", "MERGED"], ["u/2", "OPEN"], ["u/3", "CLOSED"]]);
+assert.deepEqual(["u/1", "u/2", "u/3", "u/4", null].map((u) => prWord(u, prs)), ["merged", "pr open", "closed", "pr ?", "no pr"]);
+const closedRuns = [closedRun("a", "2026-11-18T10:00:00Z", "u/1"), closedRun("b", "2026-11-17T10:00:00Z", "u/2"), closedRun("c", "2026-11-16T10:00:00Z", null), closedRun("d", "2026-11-15T10:00:00Z", "u/3", "Zed")];
+const servedPrs = model(closedRuns, new Map(), now, prs).served;
+assert.deepEqual(servedPrs.map((s) => s.run.id), ["b", "a", "c", "d"]);
+assert.deepEqual(servedPrs.map((s) => s.pr_state), ["pr open", "merged", "no pr", "closed"]);
+assert.equal(model(closedRuns, new Map(), now).served[0].pr_state, "pr ?");
+const many = Array.from({ length: 30 }, (_, i) => closedRun("r" + i, new Date(Date.parse("2026-11-01") + i * 1000).toISOString(), null));
+assert.equal(model(many, new Map(), now).served.length, 5);
+assert.equal(model(many, new Map(), now, new Map(), "demo").served.length, 20);
+assert.deepEqual(model(closedRuns, new Map(), now, prs, "THOR zed").served.map((s) => s.run.id), ["d"]);
+assert(matches("co sol", ["codex", "gpt-6.1-sol"]) && !matches("zzz", ["codex"]) && matches("", []));
+const mixed = { ...run, title: "Alpha", repo_name: "demo", tasks: [{ ...task, id: "T1", title: "Parser" }, { ...task, id: "T2", title: "Renderer" }] };
+assert.equal(filterRun(mixed, "alpha"), mixed);
+assert.deepEqual(filterRun(mixed, "render").tasks.map((t) => t.id), ["T2"]);
+assert.equal(filterRun(mixed, "nothing"), null);
+assert.equal(model([mixed], new Map(), now, new Map(), "nothing").open.length, 0);
 console.log("Swarm model: all assertions passed (states, activity, targets, findings, ordering, served, legacy board, fixture).");
