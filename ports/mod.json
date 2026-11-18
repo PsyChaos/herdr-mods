@@ -1,5 +1,0 @@
-{
-  "place": "none",
-  "title": "Ports",
-  "overlay": { "kind": "window", "key": "ports", "width": 540, "height": 560 }
-}

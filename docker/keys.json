@@ -1,5 +1,0 @@
-{
-  "global": {
-    "ctrl-shift-s": "mod.open:docker"
-  }
-}
