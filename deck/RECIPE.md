@@ -96,6 +96,15 @@ export default {
 
 Tabs, each described in its own file: [overview](tabs/overview.md), [agents](tabs/agents.md), [swarm](tabs/swarm.md), [team](tabs/team.md), [usage](tabs/usage.md), [prs](tabs/prs.md), [ports](tabs/ports.md), [docker](tabs/docker.md) (written with each tab).
 
+## One tab in a layout
+
+A layout block can show a single tab, without header, tab strip or search:
+`"content": { "mod": "deck", "props": { "tab": "agents" } }` (any tab id). It
+loads only that tab (and the probe only for overview and agents), never takes
+the keyboard focus on start, ignores the tab keys and Escape, and gets
+`compact: true` in the view context: Agents then shows only agent, state and
+age, for a narrow column. Themes (Quantum, Arcade) use it for their Tasks tab.
+
 ## Install
 
 ```sh

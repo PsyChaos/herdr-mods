@@ -25,6 +25,7 @@ import docker from "./tabs/docker.js";
 
 const TABS = [overview, agentsTab, swarm, team, usage, prs, ports, docker];
 const TICK_MS = 4000;
+const PROBED = new Set(["overview", "agents"]); // tabs that read ctx.probe
 const PROBE_MS = 5000;
 const RANGES = [{ label: "2m", n: 24 }, { label: "5m", n: 60 }, { label: "10m", n: 120 }];
 let lastTab = null; // id of the tab used last; module scope keeps it across close and reopen
@@ -50,17 +51,23 @@ export default class Deck extends View {
     const id = want?.at > Date.now() - TAB_FRESH_MS ? want.id : lastTab;
     this.tabAt = want?.at ?? 0; // init consumed it
     this.active = Math.max(0, TABS.findIndex((x) => x.id === id));
+    // Embedded: a layout block with props {tab} shows only that tab, without header or tab strip.
+    this.only = TABS.find((x) => x.id === props()?.tab) ?? null;
+    if (this.only) this.active = TABS.indexOf(this.only);
     this.h = cx.focus_handle();
-    this.h.focus();
-    cx.timer.after(600, () => this.h.focus());
+    if (!this.only) { // an embedded block must not take the keyboard from the terminals
+      this.h.focus();
+      cx.timer.after(600, () => this.h.focus());
+    }
     cx.timer.every(TICK_MS, (cx) => this.tick(cx));
-    cx.timer.every(PROBE_MS, (cx) => this.sample(cx));
+    const probed = !this.only || PROBED.has(this.only.id);
+    if (probed) cx.timer.every(PROBE_MS, (cx) => this.sample(cx));
     // Closed time is a gap in every chart, and the next sample is a fresh baseline.
     for (const p of Object.values(probes)) {
       p.raw = null;
       for (const h of [...Object.values(p.history), ...Object.values(p.agents).map((a) => a.history)]) h.push(null);
     }
-    this.sample(cx);
+    if (probed) this.sample(cx);
     this.tick(cx);
   }
 
@@ -83,14 +90,14 @@ export default class Deck extends View {
   // Each tab loads on its own: a slow one never delays another.
   tick(cx) {
     const asked = askedTab(shared("deck.tab"), this.tabAt ?? 0, Date.now(), TAB_FRESH_MS); // e.g. a CI notification
-    if (asked) {
+    if (asked && !this.only) {
       this.tabAt = shared("deck.tab").at;
       this.active = Math.max(0, TABS.findIndex((x) => x.id === asked));
       this.h.focus();
     }
     const names = machineList().filter((m) => m.layout !== "unavailable").map((m) => m.name);
     const board = props()?.board;
-    for (const tab of TABS) {
+    for (const tab of this.only ? [this.only] : TABS) {
       if (this.loading[tab.id]) continue;
       this.loading[tab.id] = true;
       cx.spawn(async (cx) => {
@@ -180,6 +187,7 @@ export default class Deck extends View {
     else if (k === "j" || k === "down") this.move(1);
     else if (k === "k" || k === "up") this.move(-1);
     else if (k === "enter") this.go(this.rowsOf(TABS[this.active]).find((r) => r.key === this.sel[TABS[this.active].id]));
+    else if (this.only && (/^[1-8]$/.test(k) || k === "tab" || k === "shift-tab" || k === "escape")) return;
     else if (/^[1-8]$/.test(k)) this.active = Math.min(Number(k) - 1, n - 1);
     else if (k === "tab") this.active = (this.active + 1) % n;
     else if (k === "shift-tab") this.active = (this.active + n - 1) % n;
@@ -238,7 +246,7 @@ export default class Deck extends View {
     if (props()?.watch) return div().id("deck-watch");
     const t = theme();
     const tab = TABS[this.active];
-    lastTab = tab.id;
+    if (!this.only) lastTab = tab.id;
     if (tab.ui?.query != null) { this.query = tab.ui.query; tab.ui.query = null; } // set by another tab
     const n = tab.ui?.note;
     const shown = n && (n.level === "error" || Date.now() - n.at < NOTE_MS) ? n : null;
@@ -246,10 +254,9 @@ export default class Deck extends View {
     return v_flex().id("deck").track_focus(this.h).on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", () => this.h.focus()) // no stop_propagation: the window stays draggable
       .size_full().bg(t.canvas).text_color(t.foreground).text_size(12).font_family(mono())
-      .child(this.header(t))
-      .child(this.tabs(t))
+      .when(!this.only, (el) => el.child(this.header(t)).child(this.tabs(t)))
       .child(div().relative().flex_1().min_h(0).flex().flex_col()
-        .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t, query: this.query }))
+        .child(tab.view(this.state[tab.id], this.sel[tab.id], cx, (key, cx) => { this.pick(key); cx.notify(); }, { range: this.range, probe: probes, t, query: this.query, compact: Boolean(this.only) }))
         .when(Boolean(shown), (el) => el.child(note(t, shown)))
         .when(Boolean(tab.ui?.dialog), (el) => el.child(div().absolute().top(0).left(0).size_full().bg(t.canvas).flex().items_start().justify_center().pt(40)
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(confirm(t, tab.ui.dialog)))));
