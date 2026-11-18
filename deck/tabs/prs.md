@@ -30,4 +30,4 @@ Per machine one python script (`PROBE`): `python3 -I -c` here, `hc exec --on <ma
 
 `watch(cx)` runs in a hidden copy of Deck (`props.watch = "prs"`, kept frameless 2×2 window, key `deck-ci-watch`). It polls and calls `notify` on each finish (passed 8 s, failed until closed, cancelled warning); the first answer per machine only records state. Heartbeat `{overlay, at}` every 60 s in `shared("deck.ci-watch")`; the tab starts a watcher when it is older than 3 min and notifications aren't off. Off is `shared("deck.ci-watch").off`, copied from `shared("ci.watch")` on first run.
 
-Known gap: a notify action can only run a Herdr command, so it is `mod.open deck` (toggles; opens on the last tab used), not "open on the prs tab".
+Notification action is the mod command `deck.prs`, delivered to the watcher's `nextCommand()`: it sets `shared("deck.tab")` and `openOverlay`s Deck's own window spec (never toggles).

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { stateOf, rollup, parseLog, logError, message, hit, build, finishes, busy, prDetail, ownerOf, runIdOf } from "./prs-model.js";
+import { outcome, prune, stateOf, rollup, parseLog, logError, message, hit, build, finishes, busy, prDetail, ownerOf, runIdOf } from "./prs-model.js";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
 const ck = (name, status, conclusion, url = `https://x/actions/runs/${name.length}`) => ({ name, status, conclusion, url });
@@ -63,4 +63,13 @@ finishes(seen, true, "m", runRepo(1, "success"));
 assert.deepEqual(finishes(seen, true, "m", runRepo(2, "failure")).map((f) => f.state), ["fail"]);
 assert.ok(busy(results) && !busy({ a: { repos: runRepo(1, "success") } }));
 assert.equal(prDetail(bad, NOW).runId, "4"); // from the failed check url
+
+// outcome: unreachable only from a transport rejection; a tool problem is an in-tab error.
+const good = JSON.stringify({ repos: [repo("o/a", [])] });
+assert.deepEqual(outcome({ code: 0, stdout: good }), { repos: [repo("o/a", [])], error: null, unreachable: false });
+assert.deepEqual(outcome({ code: 0, stdout: '{"error":"gh is missing"}' }, [1]), { repos: [1], error: "gh is missing", unreachable: false });
+assert.deepEqual(outcome({ code: 2, stderr: "python3: not found" }), { repos: [], error: "python3: not found", unreachable: false });
+assert.equal(outcome({ code: 1, stderr: "no route", unreachable: true }).unreachable, true);
+// prune: closing the last remote space drops that machine's results, errors and status.
+assert.deepEqual(Object.keys(prune({ here: {}, far: { error: "x" } }, new Set(["here"]))), ["here"]);
 console.log("ok prs-model");

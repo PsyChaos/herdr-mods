@@ -181,3 +181,19 @@ export function finishes(seen, primed, machineKey, repos) {
 
 export const busy = (results) => Object.values(results).some((r) => (r.repos ?? []).some((repo) =>
   repo.runs.some((x) => stateOf(x.status, x.conclusion) === "running") || repo.prs.some((p) => rollup(p.checks) === "running")));
+
+// One machine's reading from its probe's answer. Only a transport failure (exec rejected, flagged
+// `unreachable` by the caller) makes the machine unreachable; tool problems stay inside the tab.
+export function outcome(answer, prevRepos = []) {
+  try {
+    if (answer.code !== 0) throw new Error(answer.stderr?.trim() || "no answer");
+    const parsed = JSON.parse(answer.stdout);
+    if (parsed.error) throw new Error(parsed.error);
+    return { repos: parsed.repos, error: null, unreachable: false };
+  } catch (e) {
+    return { repos: prevRepos, error: String(e?.message ?? e).split("\n").pop(), unreachable: Boolean(answer.unreachable) };
+  }
+}
+
+// Results of the machines in `keys` only (a closed last remote space takes its machine away).
+export const prune = (results, keys) => Object.fromEntries(Object.entries(results).filter(([k]) => keys.has(k)));

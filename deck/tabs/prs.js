@@ -5,12 +5,13 @@
 
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, panes, spaces, machines, exec, hc, notify, run, props, openOverlay, closeOverlay, shared, setShared } from "herdr";
-import { build, busy, finishes, message, parseLog, logError } from "../prs-model.js";
+import { agents, panes, spaces, machines, exec, hc, notify, run, props, nextCommand, openOverlay, closeOverlay, shared, setShared } from "herdr";
+import { build, busy, finishes, message, parseLog, logError, outcome, prune } from "../prs-model.js";
 import { panel, table, dot, rowButton, textButton, chips, logView, openUrl } from "../ui.js";
 
 const WATCHER = { mod: "deck", props: { watch: "prs" }, kind: "window", key: "deck-ci-watch", keep: true,
   frame: "none", width: 2, height: 2, at: { x: 0, y: 0 } };
+const DECK = { mod: "deck", kind: "window", key: "deck", keep: true, width: 980, height: 620 };
 const WATCH_KEY = "deck.ci-watch"; // {overlay, at} while the watcher runs; {off: true} once turned off
 const HEARTBEAT_MS = 60000;
 const WATCH_STALE_MS = 3 * HEARTBEAT_MS;
@@ -152,7 +153,9 @@ const sh = (machine, argv) => (machine
 
 // Asks every machine whose answer is older than its interval; not awaited by load().
 function refresh(force = false) {
-  for (const [machine, dirs] of folders()) {
+  const now = folders();
+  store.results = prune(store.results, new Set([...now.keys()].map(keyOf)));
+  for (const [machine, dirs] of now) {
     const key = keyOf(machine);
     const cur = store.results[key];
     if (cur?.loading) continue;
@@ -161,17 +164,8 @@ function refresh(force = false) {
     store.results[key] = { ...(cur ?? {}), machine, loading: true };
     if (!dirs.length) { store.results[key] = { machine, repos: [], error: null, loading: false, at: Date.now() }; continue; }
     sh(machine, ["python3", "-I", "-c", PROBE, JSON.stringify(dirs)]).then((answer) => {
-      let repos = cur?.repos ?? [];
-      let error = null;
-      try {
-        if (answer.code !== 0) throw new Error(answer.stderr?.trim() || "no answer");
-        const parsed = JSON.parse(answer.stdout);
-        if (parsed.error) throw new Error(parsed.error);
-        repos = parsed.repos;
-      } catch (e) {
-        error = String(e?.message ?? e).split("\n").pop();
-      }
-      store.results[key] = { machine, repos, error, unreachable: Boolean(answer.unreachable) || (answer.code !== 0 && !answer.stdout), loading: false, at: Date.now() };
+      if (!(key in store.results)) return; // its machine went away meanwhile
+      store.results[key] = { machine, ...outcome(answer, cur?.repos), loading: false, at: Date.now() };
     });
   }
 }
@@ -187,8 +181,7 @@ function announce() {
       notify({
         title: `${f.title} ${{ pass: "passed", fail: "failed", cancelled: "was cancelled" }[f.state]}`, body: f.body,
         timeout: f.state === "fail" ? 0 : 8000, level: f.state === "pass" ? "success" : f.state === "fail" ? "error" : "warning",
-        // A notify action is a Herdr command, so it can't set shared("deck.tab"); mod.open toggles Deck.
-        action: { name: "mod.open", args: { name: "deck" } },
+        action: { name: "deck.prs" }, // reaches the watcher's nextCommand(), see watch()
       });
     }
   }
@@ -217,11 +210,12 @@ function setWatching(on) {
 }
 
 const model = (() => {
-  let memo = { state: null, query: null, at: 0, value: null };
+  let memo = { state: null, query: null, bots: "", at: 0, value: null };
   return (state, query = "") => {
     const now = Date.now();
-    if (memo.state !== state || memo.query !== query || now - memo.at > 100) {
-      memo = { state, query, at: now, value: build({ results: state.results, spaces: spaces(), owners: state.owners, query, botsOpen, now }) };
+    const bots = [...botsOpen].join("\n"); // a fold toggle must show at once
+    if (memo.state !== state || memo.query !== query || memo.bots !== bots || now - memo.at > 100) {
+      memo = { state, query, bots, at: now, value: build({ results: state.results, spaces: spaces(), owners: state.owners, query, botsOpen, now }) };
     }
     return memo.value;
   };
@@ -332,6 +326,15 @@ export function watch(cx) {
   };
   tick();
   cx.timer.every(BUSY_REFRESH_MS, tick);
+  // The notification's action is the mod command "deck.prs": open Deck on this tab. openOverlay
+  // (unlike mod.open) never toggles; the same key "deck" reuses a window that is already open.
+  cx.spawn(async () => {
+    for (;;) {
+      if ((await nextCommand()) !== "prs") continue;
+      setShared("deck.tab", { id: "prs", at: Date.now() });
+      openOverlay(DECK);
+    }
+  });
 }
 
 export default {
