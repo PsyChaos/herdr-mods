@@ -68,7 +68,8 @@ export default {
   view(_state, sel, _cx, pick, { range, probe, t }) {
     const bold = (text, color = t.foreground) => div().font_semibold().text_color(color).child(text);
     const line = (...kids) => h_flex().gap(8).items_center().children(kids);
-    const slice = (h) => (h ?? []).slice(-range);
+    // Always `range` slots, newest at the right: a short history starts at the right edge.
+    const slice = (h) => { const s = (h ?? []).slice(-range); return Array(range - s.length).fill(null).concat(s); };
     const row = (iconName, word, body) => h_flex().gap(0).items_start().child(rowLabel(t, iconName, word)).child(v_flex().flex_1().min_w(0).gap(6).children(body));
 
     const card = (name) => {

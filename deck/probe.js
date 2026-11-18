@@ -138,6 +138,7 @@ export function record(store, machine, result) {
   m.ok = Boolean(s);
   m.error = s ? null : result.error ?? "probe failed";
   if (s) { m.sample = { ...s, agents: undefined }; m.raw = result.raw; }
+  m.at = Date.now(); // when the series last moved, for the gap after a close
   const h = m.history;
   push(h.cpu, s ? s.cpu : null, MAX);
   push(h.mem, s ? s.mem.pct : null, MAX);

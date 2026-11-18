@@ -13,7 +13,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { machines, panes, agents, spaces, run, exec, theme, props, layout, closeOverlay, shared, readTextFile, writeTextFile, appHome } from "herdr";
 import { dot, mono, icon, chip, segmented, confirm, note, openUrl } from "./ui.js";
 import { machineBad, askedTab, SIZES, sizeIndex, cornerRadius, solid } from "./frame.js";
-import { probeAll } from "./probe.js";
+import { probeAll, MAX, AGENT_MAX } from "./probe.js";
 import overview from "./tabs/overview.js";
 import agentsTab from "./tabs/agents.js";
 import swarm from "./tabs/swarm.js";
@@ -70,10 +70,13 @@ export default class Deck extends View {
     cx.timer.every(TICK_MS, (cx) => this.tick(cx));
     const probed = !this.only || PROBED.has(this.only.id);
     if (probed) cx.timer.every(PROBE_MS, (cx) => this.sample(cx));
-    // Closed time is a gap in every chart, and the next sample is a fresh baseline.
+    // Closed time is a gap as long as it was (one null per missed sample), and the next sample
+    // is a fresh baseline; a close longer than the history leaves empty charts.
     for (const p of Object.values(probes)) {
       p.raw = null;
-      for (const h of [...Object.values(p.history), ...Object.values(p.agents).map((a) => a.history)]) h.push(null);
+      const missed = Math.min(MAX, Math.max(1, Math.round((Date.now() - (p.at ?? 0)) / PROBE_MS)));
+      for (const h of Object.values(p.history)) { for (let i = 0; i < missed; i++) h.push(null); h.splice(0, Math.max(0, h.length - MAX)); }
+      for (const a of Object.values(p.agents)) { for (let i = 0; i < Math.min(missed, AGENT_MAX); i++) a.history.push(null); a.history.splice(0, Math.max(0, a.history.length - AGENT_MAX)); }
     }
     if (probed) this.sample(cx);
     this.tick(cx);
